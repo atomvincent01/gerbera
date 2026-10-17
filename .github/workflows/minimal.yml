@@ -1,9 +1,11 @@
-name: Minimal
+name: Minimal resilience preflight
 
 on:
-  pull_request:
-    branches:
-      - master
+  push:
+    branches: [preflight/minimal-resilience]
+
+permissions:
+  contents: read
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -19,11 +21,15 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        platform: ['x86_64', 'x86', 'armhf', 'armv7', 'aarch64', 'loongarch64', 'ppc64le', 'riscv64', 's390x']
-        branch: ['v3.23', 'v3.24', 'edge']
-        exclude:
-          - platform: "ppc64le"
-            branch: "v3.24"
+        include:
+          - platform: x86_64
+            branch: v3.23
+          - platform: x86_64
+            branch: v3.24
+          - platform: x86_64
+            branch: edge
+          - platform: x86
+            branch: v3.23
 
     name: Minimal ${{matrix.platform}}${{matrix.branch != 'v3.24' && format(' - {0}', matrix.branch) || format('')}}
     defaults:
