@@ -52,7 +52,7 @@ jobs:
           git show 46fba1f9b7bba3c04875b5c97fdfeb0ccff318e3:gerbera-web/test/client/gerbera.items.spec.js > test/client/gerbera.items.spec.js
           reproduced=no
           for seed in 12345 42 1 2 3; do
-            if JASMINE_GREP='Gerbera UI App viewItems.*undefined|Gerbera Items treeItemSelected' JASMINE_SEED=$seed node /tmp/gerbera-karma-seed.cjs > preflight-logs/before-$seed.log 2>&1; then
+            if JASMINE_GREP='/Gerbera UI App viewItems.*undefined|Gerbera Items treeItemSelected/' JASMINE_SEED=$seed node /tmp/gerbera-karma-seed.cjs > preflight-logs/before-$seed.log 2>&1; then
               echo "Original suite passed seed $seed"
             else
               cat preflight-logs/before-$seed.log
@@ -69,7 +69,7 @@ jobs:
       - name: Lint and test corrected suite with five seeds
         run: |
           npm run lint
-          JASMINE_GREP='Gerbera UI App viewItems.*undefined|Gerbera Items treeItemSelected' JASMINE_SEED=$(cat /tmp/reproduced-seed) node /tmp/gerbera-karma-seed.cjs 2>&1 | tee preflight-logs/after-focused.log
+          JASMINE_GREP='/Gerbera UI App viewItems.*undefined|Gerbera Items treeItemSelected/' JASMINE_SEED=$(cat /tmp/reproduced-seed) node /tmp/gerbera-karma-seed.cjs 2>&1 | tee preflight-logs/after-focused.log
           for seed in 12345 42 1 2 3; do
             JASMINE_SEED=$seed node /tmp/gerbera-karma-seed.cjs 2>&1 | tee preflight-logs/after-$seed.log
           done
