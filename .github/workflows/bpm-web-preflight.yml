@@ -1,0 +1,76 @@
+name: BPM web UI isolation preflight
+
+on:
+  push:
+    branches: [preflight/bpm-web-isolation]
+
+permissions:
+  contents: read
+
+jobs:
+  web:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      DETECT_CHROMEDRIVER_VERSION: true
+    defaults:
+      run:
+        working-directory: gerbera-web
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+      - name: Install locked dependencies
+        run: npm ci --legacy-peer-deps
+      - name: Prepare seeded Karma runner
+        run: |
+          cat > /tmp/gerbera-karma-seed.cjs <<'JS'
+          const path = require('path');
+          const root = process.cwd();
+          const { Server, config } = require(path.join(root, 'node_modules/karma'));
+          const seed = process.env.JASMINE_SEED;
+          console.log('Jasmine random seed:', seed);
+          config.parseConfig(path.join(root, 'karma.conf.js'), {
+            client: { jasmine: { random: true, seed } },
+            singleRun: true,
+          }, { promiseConfig: true, throwErrors: true }).then(settings => {
+            new Server(settings, code => process.exit(code)).start();
+          }).catch(error => { console.error(error); process.exit(1); });
+          JS
+      - name: Reproduce the original shared-state failure
+        run: |
+          mkdir -p preflight-logs
+          cp test/client/gerbera.app.spec.js /tmp/fixed-app.spec.js
+          cp test/client/gerbera.items.spec.js /tmp/fixed-items.spec.js
+          git show 46fba1f9b7bba3c04875b5c97fdfeb0ccff318e3:gerbera-web/test/client/gerbera.app.spec.js > test/client/gerbera.app.spec.js
+          git show 46fba1f9b7bba3c04875b5c97fdfeb0ccff318e3:gerbera-web/test/client/gerbera.items.spec.js > test/client/gerbera.items.spec.js
+          reproduced=no
+          for seed in 12345 42 1 2 3; do
+            if JASMINE_SEED=$seed node /tmp/gerbera-karma-seed.cjs > preflight-logs/before-$seed.log 2>&1; then
+              echo "Original suite passed seed $seed"
+            else
+              cat preflight-logs/before-$seed.log
+              grep -q 'Expected.*25.*50' preflight-logs/before-$seed.log
+              echo "Reproduced original pagination failure with seed $seed"
+              reproduced=yes
+              break
+            fi
+          done
+          cp /tmp/fixed-app.spec.js test/client/gerbera.app.spec.js
+          cp /tmp/fixed-items.spec.js test/client/gerbera.items.spec.js
+          test "$reproduced" = yes
+      - name: Lint and test corrected suite with five seeds
+        run: |
+          npm run lint
+          for seed in 12345 42 1 2 3; do
+            JASMINE_SEED=$seed node /tmp/gerbera-karma-seed.cjs 2>&1 | tee preflight-logs/after-$seed.log
+          done
+      - name: Run complete browser interaction suite
+        run: npm run test:e2e 2>&1 | tee preflight-logs/e2e.log
+      - name: Preserve evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: bpm-web-isolation-evidence
+          path: gerbera-web/preflight-logs
