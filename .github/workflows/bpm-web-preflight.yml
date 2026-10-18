@@ -19,7 +19,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          fetch-depth: 5
+          fetch-depth: 10
       - uses: actions/setup-node@v7
         with:
           node-version: '24'
@@ -34,7 +34,10 @@ jobs:
           const seed = process.env.JASMINE_SEED;
           console.log('Jasmine random seed:', seed);
           config.parseConfig(path.join(root, 'karma.conf.js'), {
-            client: { jasmine: { random: true, seed } },
+            client: {
+              jasmine: { random: true, seed },
+              args: process.env.JASMINE_GREP ? ['--grep', process.env.JASMINE_GREP] : [],
+            },
             singleRun: true,
           }, { promiseConfig: true, throwErrors: true }).then(settings => {
             new Server(settings, code => process.exit(code)).start();
@@ -49,12 +52,13 @@ jobs:
           git show 46fba1f9b7bba3c04875b5c97fdfeb0ccff318e3:gerbera-web/test/client/gerbera.items.spec.js > test/client/gerbera.items.spec.js
           reproduced=no
           for seed in 12345 42 1 2 3; do
-            if JASMINE_SEED=$seed node /tmp/gerbera-karma-seed.cjs > preflight-logs/before-$seed.log 2>&1; then
+            if JASMINE_GREP='Gerbera UI App viewItems.*undefined|Gerbera Items treeItemSelected' JASMINE_SEED=$seed node /tmp/gerbera-karma-seed.cjs > preflight-logs/before-$seed.log 2>&1; then
               echo "Original suite passed seed $seed"
             else
               cat preflight-logs/before-$seed.log
               grep -q 'Expected.*25.*50' preflight-logs/before-$seed.log
               echo "Reproduced original pagination failure with seed $seed"
+              echo "$seed" > /tmp/reproduced-seed
               reproduced=yes
               break
             fi
@@ -65,6 +69,7 @@ jobs:
       - name: Lint and test corrected suite with five seeds
         run: |
           npm run lint
+          JASMINE_GREP='Gerbera UI App viewItems.*undefined|Gerbera Items treeItemSelected' JASMINE_SEED=$(cat /tmp/reproduced-seed) node /tmp/gerbera-karma-seed.cjs 2>&1 | tee preflight-logs/after-focused.log
           for seed in 12345 42 1 2 3; do
             JASMINE_SEED=$seed node /tmp/gerbera-karma-seed.cjs 2>&1 | tee preflight-logs/after-$seed.log
           done
