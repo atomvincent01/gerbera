@@ -30,16 +30,29 @@ jobs:
           git fetch --depth=1 origin db74c895baba9307d59108f1386a177c5ef91e5f
           git worktree add "$RUNNER_TEMP/grb-base" db74c895baba9307d59108f1386a177c5ef91e5f
           cmake -S "$RUNNER_TEMP/grb-base" -G Ninja -B build-baseline --preset=macos -DCMAKE_CXX_FLAGS=-Werror
+          probe_flags=-Werror
           if cmake --build build-baseline --target CMakeFiles/libgerbera.dir/src/action_request.cc.o > baseline-dependency.log 2>&1; then
             echo 'Unchanged upstream compiles without the dependency exception.'
           elif grep -q 'spdlog/logger.h:.*error:.*deprecated' baseline-dependency.log; then
             cat baseline-dependency.log
             echo 'The unchanged base reproduces the fmt/spdlog deprecation; keep it visible as a warning.'
-            echo 'MSC_CXX_FLAGS=-Werror -Wno-error=deprecated-declarations' >> "$GITHUB_ENV"
+            probe_flags="$probe_flags -Wno-error=deprecated-declarations"
           else
             cat baseline-dependency.log
             exit 1
           fi
+          cmake -S "$RUNNER_TEMP/grb-base" -B build-baseline "-DCMAKE_CXX_FLAGS=$probe_flags"
+          if cmake --build build-baseline --target test/core/CMakeFiles/testcore.dir/test_bpm_metadata.cc.o > baseline-mocks.log 2>&1; then
+            echo 'Unchanged upstream mocks compile without an override-warning exception.'
+          elif grep -q 'config_mock.h:.*error:.*inconsistent-missing-override' baseline-mocks.log; then
+            cat baseline-mocks.log
+            echo 'The unchanged base reproduces the old-Clang mock warning; keep it visible.'
+            probe_flags="$probe_flags -Wno-error=inconsistent-missing-override"
+          else
+            cat baseline-mocks.log
+            exit 1
+          fi
+          echo "MSC_CXX_FLAGS=$probe_flags" >> "$GITHUB_ENV"
       - name: Configure and compile with the upstream macOS preset
         shell: bash
         run: |
@@ -59,6 +72,7 @@ jobs:
           path: |
             build-output.log
             baseline-dependency.log
+            baseline-mocks.log
             ctest-output.log
             mac-junit.xml
             build/Testing/Temporary/LastTest.log
