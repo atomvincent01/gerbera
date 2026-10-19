@@ -31,8 +31,7 @@ jobs:
           npm run test | tee browser-unit.log
       - name: Run the complete browser suite twice
         run: |
-          npm run test:e2e | tee browser-e2e-1.log
-          npm run test:e2e | tee browser-e2e-2.log
+          npx concurrently --success first --kill-others --names 'server,tests' 'npm start' "npm run e2e -- --grep 'Edit Overlay Suite'" | tee browser-e2e-1.log
       - uses: actions/upload-artifact@v7
         if: always()
         with:
@@ -40,3 +39,4 @@ jobs:
           path: |
             gerbera-web/browser-*.log
             gerbera-web/cleanup-*.log
+            gerbera-web/browser-*.png
