@@ -1,0 +1,39 @@
+name: WPL XSPF browser preflight
+on:
+  push:
+    branches: [preflight/xml-web]
+permissions:
+  contents: read
+jobs:
+  browser:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      DETECT_CHROMEDRIVER_VERSION: true
+    defaults:
+      run:
+        working-directory: gerbera-web
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+      - name: Install exact browser-test dependencies
+        run: npm ci --legacy-peer-deps
+      - name: Check delayed editor cleanup against old and corrected helpers
+        run: python3 ../test-browser-cleanup.py
+      - name: Lint and run all JavaScript unit tests
+        run: |
+          npm run lint | tee browser-lint.log
+          npm run test | tee browser-unit.log
+      - name: Run the complete browser suite twice
+        run: |
+          npm run test:e2e | tee browser-e2e-1.log
+          npm run test:e2e | tee browser-e2e-2.log
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: xml-browser-preflight
+          path: |
+            gerbera-web/browser-*.log
+            gerbera-web/cleanup-*.log
