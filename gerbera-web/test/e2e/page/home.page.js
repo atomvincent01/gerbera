@@ -180,14 +180,14 @@ module.exports = function (driver) {
     try {
       await driver.wait(until.elementIsVisible(cancelButton), 5000);
     } catch (error) {
-      console.log('EDITOR STATE', await driver.executeScript(() => {
+      console.log('EDITOR STATE', JSON.stringify(await driver.executeScript(() => {
         return ['editModal', 'editCancel'].map(id => Array.from(document.querySelectorAll('#' + id)).map(element => ({
           id, html: element.outerHTML.slice(0, 1800), display: getComputedStyle(element).display,
           visibility: getComputedStyle(element).visibility, opacity: getComputedStyle(element).opacity,
           rect: element.getBoundingClientRect().toJSON(),
           parents: Array.from((function* () { let p = element.parentElement; while (p) { yield p; p = p.parentElement; } })()).map(p => ({tag: p.tagName, id: p.id, classes: p.className, display: getComputedStyle(p).display, opacity: getComputedStyle(p).opacity}))
         })));
-      }));
+      })));
       require('fs').writeFileSync('browser-editor-failure.png', await driver.takeScreenshot(), 'base64');
       throw error;
     }
