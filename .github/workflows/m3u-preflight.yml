@@ -1,0 +1,42 @@
+name: M3U charset macOS preflight
+
+on:
+  push:
+    branches: [preflight/m3u-charset]
+
+permissions:
+  contents: read
+
+jobs:
+  macos:
+    runs-on: macos-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install macOS dependencies
+        shell: bash
+        run: |
+          brew uninstall cmake || true
+          brew install cmake pkg-config duktape exiv2 fmt ffmpeg wavpack ffmpegthumbnailer googletest libexif libmagic libmatroska libupnp ossp-uuid ninja pugixml jsoncpp icu4c spdlog taglib cxxopts
+          brew list --versions
+      - name: Configure and compile with the upstream macOS preset
+        shell: bash
+        run: |
+          cmake -S . -G Ninja -B build --preset=macos -DCMAKE_CXX_FLAGS=-Werror
+          cmake --build build --parallel $(sysctl -n hw.physicalcpu) --verbose | tee build-output.log
+          ./build/gerbera --compile-info
+      - name: Run all macOS regression tests
+        shell: bash
+        run: |
+          cd build
+          ctest --output-on-failure --parallel 1 | tee ../ctest-output.log
+      - name: Save preflight evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: m3u-macos-preflight
+          path: |
+            build-output.log
+            ctest-output.log
+            build/Testing/Temporary/LastTest.log
+            build/Testing/Temporary/LastTestsFailed.log
