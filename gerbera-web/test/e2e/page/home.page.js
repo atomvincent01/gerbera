@@ -175,10 +175,16 @@ module.exports = function (driver) {
   };
 
   this.cancelEdit = async () => {
-    await driver.sleep(500); // slow down with animations
-    await driver.findElement(By.id('editCancel')).click();
-    await driver.sleep(1000);
-    return await driver.wait(until.elementIsNotVisible(driver.findElement(By.id('editModal'))), 5000);
+    const modal = await driver.findElement(By.id('editModal'));
+    const cancelButton = await driver.wait(until.elementLocated(By.css('#editModal #editCancel')), 5000);
+    await driver.wait(until.elementIsVisible(cancelButton), 5000);
+    await driver.wait(until.elementIsEnabled(cancelButton), 5000);
+    await cancelButton.click();
+    return await driver.wait(async () => {
+      const hidden = await modal.getCssValue('display') === 'none';
+      const backdrops = await driver.findElements(By.css('.modal-backdrop'));
+      return hidden && backdrops.length === 0;
+    }, 5000);
   };
 
   this.submitEditor = async () => {
