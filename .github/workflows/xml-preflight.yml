@@ -1,0 +1,43 @@
+name: WPL and XSPF macOS preflight
+
+on:
+  push:
+    branches: [preflight/xml-playlists]
+
+permissions:
+  contents: read
+
+jobs:
+  macos:
+    runs-on: macos-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install macOS dependencies
+        shell: bash
+        run: |
+          brew uninstall cmake || true
+          brew install cmake pkg-config duktape exiv2 fmt ffmpeg wavpack ffmpegthumbnailer googletest libexif libmagic libmatroska libupnp ossp-uuid ninja pugixml jsoncpp icu4c spdlog taglib cxxopts
+          brew list --versions
+      - name: Configure and compile with the upstream macOS preset
+        shell: bash
+        run: |
+          cmake -S . -G Ninja -B build --preset=macos -DCMAKE_CXX_FLAGS=-Werror
+          cmake --build build --parallel $(sysctl -n hw.physicalcpu) --verbose | tee build-output.log
+          ./build/gerbera --compile-info
+      - name: Run all macOS regression tests
+        shell: bash
+        run: |
+          cd build
+          ctest --output-on-failure --parallel 1 --output-junit ../mac-junit.xml | tee ../ctest-output.log
+      - name: Save preflight evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: xml-macos-preflight
+          path: |
+            build-output.log
+            ctest-output.log
+            mac-junit.xml
+            build/Testing/Temporary/LastTest.log
+            build/Testing/Temporary/LastTestsFailed.log
