@@ -161,7 +161,7 @@ void PlaylistParserScript::handleObject2cdsItem(
     item->setPartNumber(0);
 }
 
-void PlaylistParserScript::processPlaylistObject(
+std::optional<std::vector<int>> PlaylistParserScript::processPlaylistObject(
     const std::shared_ptr<CdsObject>& obj,
     std::shared_ptr<GenericTask> task,
     const std::string& rootPath)
@@ -193,8 +193,10 @@ void PlaylistParserScript::processPlaylistObject(
     currentLine[0] = '\0';
 
     ScriptingRuntime::AutoLock lock(runtime->getMutex());
+    std::vector<int> result;
+    bool hasResult = false;
     try {
-        call(obj, nullptr, playlistFunction, rootPath, "");
+        result = call(obj, nullptr, playlistFunction, rootPath, "", &hasResult);
     } catch (const std::runtime_error&) {
         cleanUp();
         throw;
@@ -202,6 +204,7 @@ void PlaylistParserScript::processPlaylistObject(
 
     log_debug("Done {} {} ({})...", contextName, obj->getLocation().string(), obj->getID());
     cleanUp();
+    return hasResult ? std::make_optional(std::move(result)) : std::nullopt;
 }
 
 #endif // HAVE_JS
