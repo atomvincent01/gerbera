@@ -9,7 +9,11 @@ permissions:
 
 jobs:
   macos:
-    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [macos-latest, macos-15-intel]
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 35
     steps:
       - uses: actions/checkout@v7
@@ -34,7 +38,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: xml-macos-preflight
+          name: xml-macos-preflight-${{ matrix.runner }}
           path: |
             build-output.log
             ctest-output.log
