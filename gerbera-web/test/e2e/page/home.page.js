@@ -193,7 +193,11 @@ module.exports = function (driver) {
     }
     await driver.wait(until.elementIsEnabled(cancelButton), 5000);
     await cancelButton.click();
-    return await driver.wait(until.elementIsNotVisible(modal), 5000);
+    return await driver.wait(async () => {
+      const hidden = await modal.getCssValue('display') === 'none';
+      const backdrops = await driver.findElements(By.css('.modal-backdrop'));
+      return hidden && backdrops.length === 0;
+    }, 5000);
   };
 
   this.submitEditor = async () => {

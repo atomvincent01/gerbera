@@ -50,7 +50,8 @@ describe('Edit Overlay Suite', () => {
 
   describe('The edit overlay page', () => {
 
-    afterEach(async () => {
+    afterEach(async function () {
+      console.log('BODY RESULT', this.currentTest.title, this.currentTest.state, this.currentTest.err?.stack);
       await homePage.cancelEdit();
     });
 
@@ -118,7 +119,8 @@ describe('Edit Overlay Suite', () => {
 
   describe('The edit overlay item type selection', () => {
 
-    afterEach(async () => {
+    afterEach(async function () {
+      console.log('BODY RESULT', this.currentTest.title, this.currentTest.state, this.currentTest.err?.stack);
       await homePage.cancelEdit();
     });
 
@@ -183,7 +185,8 @@ describe('Edit Overlay Suite', () => {
 
   describe('The edit overlay load item', () => {
 
-    afterEach(async () => {
+    afterEach(async function () {
+      console.log('BODY RESULT', this.currentTest.title, this.currentTest.state, this.currentTest.err?.stack);
       await homePage.cancelEdit();
     });
 
