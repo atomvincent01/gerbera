@@ -27,6 +27,7 @@ add_executable(
     main.cc #
     test_jpeg_res.cc #
     test_tools.cc #
+    test_xml_playlist.cc #
     test_upnp_clients.cc #
     test_upnp_headers.cc #
 )
@@ -38,6 +39,9 @@ else()
 endif()
 
 add_dependencies(testutil libgerbera gerbera)
+target_compile_definitions(
+    testutil
+    PRIVATE XML_PLAYLIST_FIXTURES="${CMAKE_SOURCE_DIR}/test/scripting/fixtures/xml-playlists")
 
 include(GoogleTest)
 gtest_discover_tests(testutil DISCOVERY_TIMEOUT 60 TEST_LIST GRB_UTIL_TESTS)
