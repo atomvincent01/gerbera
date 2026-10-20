@@ -323,7 +323,13 @@ class Fixture:
         self.process = subprocess.Popen(
             command, stdout=self.log, stderr=subprocess.STDOUT
         )
-        wait_for(lambda: self.browse(0))
+        try:
+            wait_for(lambda: self.browse(0))
+        except AssertionError:
+            self.log.flush()
+            print("Server startup exit status:", self.process.poll(), flush=True)
+            print(Path(self.log.name).read_text(errors="replace")[-10000:], flush=True)
+            raise
 
     def stop(self):
         if self.process is not None:

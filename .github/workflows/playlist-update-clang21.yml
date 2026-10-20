@@ -1,0 +1,42 @@
+name: Playlist update Clang 21 diagnostics
+on:
+  push:
+    branches: [preflight/playlist-update-clang21]
+  workflow_dispatch:
+jobs:
+  clang21:
+    runs-on: ubuntu-26.04
+    env:
+      CC: clang-21
+      CXX: clang++-21
+      CONAN_RUN_TESTS: 1
+    steps:
+      - uses: actions/checkout@v7
+      - run: sudo apt-get update -y && sudo apt-get install -y openssl
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - run: |
+          pip install -U --no-cache-dir conan
+          conan profile detect --name default
+      - uses: actions/cache@v6
+        with:
+          path: ~/.conan2
+          key: ${{ runner.os }}-conan2-clang-21-${{ hashFiles('conanfile.py') }}-${{ hashFiles('conan/*') }}
+          restore-keys: |
+            ${{ runner.os }}-conan2-clang-21-
+      - name: Exact Clang 21 Conan configuration with startup diagnostics
+        run: |
+          conan remove 'gerbera/*' -c
+          conan create -pr ./conan/dev -o='gerbera/*:icu=True' -o='gerbera/*:postgres=False' -o='gerbera/*:libsystemd=False' --build=missing --version dev .
+      - name: Preserve fixture and CTest logs
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/gerbera-diagnostics"
+          find "$HOME/.conan2" -name LastTest.log -exec cp --parents '{}' "$RUNNER_TEMP/gerbera-diagnostics/" ';'
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: playlist-update-clang21-logs
+          path: ${{ runner.temp }}/gerbera-diagnostics
