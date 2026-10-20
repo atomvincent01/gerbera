@@ -215,40 +215,33 @@ void PlaylistParserScript::processPlaylistObject(
     log_debug("Checking playlist {} ...", obj->getLocation().string());
     GrbFile file(item->getLocation());
     bool isXmlPlaylist = item->getMimeType() == MIME_TYPE_WPL_PLAYLIST || item->getMimeType() == MIME_TYPE_XSPF_PLAYLIST;
+    ScriptingRuntime::AutoLock lock(runtime->getMutex());
     xmlEntries.clear();
     xmlPosition = 0;
-    if (isXmlPlaylist) {
-        xmlEntries = readXmlPlaylist(item->getLocation(), item->getMimeType() == MIME_TYPE_WPL_PLAYLIST ? XmlPlaylistType::Wpl : XmlPlaylistType::Xspf);
-    } else if (item->getMimeType() != MIME_TYPE_ASX_PLAYLIST) {
-        currentHandle = file.open("r");
-    } else {
-        pugi::xml_parse_result result = xmlDoc.load_file(item->getLocation().c_str());
-        if (result.status != pugi::xml_parse_status::status_ok) {
-            throw ConfigParseException(result.description());
-        }
-        root = xmlDoc.document_element();
-    }
-
-    currentTask = std::move(task);
-    currentObjectID = item->getID();
-    currentLine = new char[ONE_TEXTLINE_BYTES];
-    currentLine[0] = '\0';
-
-    ScriptingRuntime::AutoLock lock(runtime->getMutex());
-    auto previousConverter = sc;
-    if (isXmlPlaylist)
-        sc = converterManager->i2i(); // XML has already been decoded to UTF-8.
     try {
+        if (isXmlPlaylist) {
+            prepareXmlFile(item->getLocation(), pugi::parse_default | pugi::parse_doctype);
+            xmlEntries = readXmlPlaylist(xmlDoc, item->getLocation(), item->getMimeType() == MIME_TYPE_WPL_PLAYLIST ? XmlPlaylistType::Wpl : XmlPlaylistType::Xspf);
+            useUtf8Converter();
+        } else if (item->getMimeType() == MIME_TYPE_ASX_PLAYLIST) {
+            prepareXmlFile(item->getLocation());
+        } else {
+            currentHandle = file.open("r");
+        }
+
+        currentTask = std::move(task);
+        currentObjectID = item->getID();
+        currentLine = new char[ONE_TEXTLINE_BYTES];
+        currentLine[0] = '\0';
+
         call(obj, nullptr, playlistFunction, rootPath, "");
     } catch (const std::runtime_error&) {
-        sc = previousConverter;
         xmlEntries.clear();
         cleanUp();
         throw;
     }
 
     log_debug("Done {} {} ({})...", contextName, obj->getLocation().string(), obj->getID());
-    sc = previousConverter;
     xmlEntries.clear();
     cleanUp();
 }

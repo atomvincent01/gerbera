@@ -42,6 +42,7 @@
 #include "database/database.h"
 #include "exceptions.h"
 #include "util/generic_task.h"
+#include "util/grb_fs.h"
 #include "util/string_converter.h"
 #include "util/tools.h"
 
@@ -214,6 +215,29 @@ pugi::xml_node& ParserScript::readXml(int direction)
     return nullNode;
 }
 
+void ParserScript::prepareXmlFile(const fs::path& path, unsigned int flags)
+{
+    loadXmlFile(path, xmlDoc, flags);
+    root = xmlDoc.document_element();
+}
+
+void ParserScript::loadXmlFile(const fs::path& path, pugi::xml_document& document, unsigned int flags)
+{
+    auto contents = GrbFile(path).readBinaryFile();
+    if (!contents)
+        throw_std_runtime_error("Cannot open XML file {}", path.string());
+    auto result = document.load_buffer(contents->data(), contents->size(), flags);
+    if (!result)
+        throw ConfigParseException(result.description());
+}
+
+void ParserScript::useUtf8Converter()
+{
+    if (!savedConverter)
+        savedConverter = sc;
+    sc = converterManager->i2i();
+}
+
 std::pair<std::string, bool> ParserScript::readLine()
 {
     if (!currentHandle)
@@ -235,6 +259,10 @@ std::pair<std::string, bool> ParserScript::readLine()
 void ParserScript::cleanUp()
 {
     currentHandle = nullptr;
+    if (savedConverter) {
+        sc = savedConverter;
+        savedConverter.reset();
+    }
 
     delete[] currentLine;
     currentLine = nullptr;

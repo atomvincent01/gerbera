@@ -70,11 +70,17 @@ protected:
 
     /// @brief clean up caches and parsing output
     void cleanUp();
+    /// Load XML through the common file utility, retaining BOM/declaration decoding.
+    void prepareXmlFile(const fs::path& path, unsigned int flags = pugi::parse_default);
+    static void loadXmlFile(const fs::path& path, pugi::xml_document& document, unsigned int flags = pugi::parse_default);
+    /// Preserve the parser converter until cleanUp when input is already UTF-8.
+    void useUtf8Converter();
 
     static pugi::xml_node nullNode;
     /// @brief maximum length of one text line
     static constexpr int ONE_TEXTLINE_BYTES = 1024;
 
+    std::shared_ptr<StringConverter> savedConverter;
     std::FILE* currentHandle {};
     int currentObjectID { INVALID_OBJECT_ID };
     char* currentLine {};
