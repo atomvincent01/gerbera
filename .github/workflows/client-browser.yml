@@ -1,0 +1,42 @@
+name: Client grid browser preflight
+on:
+  push:
+    branches: [preflight/client-load]
+permissions:
+  contents: read
+jobs:
+  browser:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      DETECT_CHROMEDRIVER_VERSION: true
+    defaults:
+      run:
+        working-directory: gerbera-web
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+      - name: Install browser dependencies
+        run: npm ci --legacy-peer-deps
+      - name: Reproduce early read and check corrected loading states
+        run: python3 ../test-client-loading.py
+      - name: Lint and all JavaScript unit tests
+        run: |
+          set -o pipefail
+          npm run lint | tee client-lint.log
+          npm run test | tee client-unit.log
+      - name: Complete normal browser suite
+        run: |
+          set -o pipefail
+          npm run test:e2e | tee client-e2e.log
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: client-loading-results
+          path: |
+            gerbera-web/client-*.log
+            gerbera-web/client-proof.json
