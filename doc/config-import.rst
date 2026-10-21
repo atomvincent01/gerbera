@@ -830,6 +830,119 @@ Set option ``value`` for option ``name``.
 
     Value of the option.
 
+Audio Title Format
+^^^^^^^^^^^^^^^^^^
+
+The standard JavaScript audio layouts can build their displayed audio title
+from a format string, without editing JavaScript. Add the attribute to the
+existing ``import/scripting/virtual-layout`` element; keep its other settings:
+
+.. code-block:: xml
+
+    <virtual-layout type="js" audio-title-format="%title%">
+      <!-- Keep existing layout settings here. -->
+    </virtual-layout>
+
+.. confval:: audio-title-format
+   :type: :confval:`String`
+   :required: false
+   :default: Empty (existing title behavior)
+
+The format replaces the automatic artist-prefix logic when nonempty. An absent
+or empty format preserves existing behavior. Examples:
+
+* ``%title%``: title only, including on compilation albums.
+* ``%artist% - %title%``: artist and title.
+* ``%tracknr2% - %title%``: two-digit track number and title.
+* ``%cdnumber%.%tracknr2% - %title%``: disc, track number and title.
+
+Placeholder legend
+~~~~~~~~~~~~~~~~~~
+
+.. list-table:: Supported placeholders (case-sensitive)
+   :header-rows: 1
+   :widths: 25 75
+
+   * - Placeholder
+     - Meaning
+   * - ``%title%``
+     - Track title; uses Gerbera's existing item-title/filename fallback if the title tag is missing.
+   * - ``%artist%``
+     - Track artists, joined with `` / ``.
+   * - ``%albumartist%``
+     - Album artist, falling back to the track artist.
+   * - ``%albumtitle%``
+     - Album title.
+   * - ``%tracknr1%``
+     - Track number, at least one digit (for example ``2``).
+   * - ``%tracknr2%``
+     - Track number, at least two digits (for example ``02``).
+   * - ``%tracknr3%``
+     - Track number, at least three digits (for example ``002``).
+   * - ``%cdnumber%``
+     - Disc number, without zero padding; supports disc tags such as ``2/3``.
+   * - ``%year%``
+     - Release year from the date tag.
+   * - ``%genre%``
+     - Genres, joined with `` / ``.
+   * - ``%composer%``
+     - Composers, joined with `` / ``.
+   * - ``%filename%``
+     - Source basename without its extension; the source file is not renamed.
+   * - ``%%``
+     - A literal percent sign.
+
+Missing metadata produces an empty placeholder, except for the documented
+title/album-artist fallbacks. Zero or unavailable track/disc numbers are empty;
+padding never truncates longer numbers. Unknown placeholders remain literal.
+Separators written into the format remain even when a neighboring field is
+empty. Leading and trailing whitespace is removed. If the generated title is
+empty, Gerbera falls back to the track title, then the filename.
+
+Character replacements in displayed titles
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. confval:: title-replacements
+   :type: :confval:`Section`
+   :required: false
+
+Optional literal replacements apply after expanding a nonempty
+``audio-title-format``. They affect only the generated audio display title:
+
+.. code-block:: xml
+
+    <virtual-layout type="js" audio-title-format="%title%">
+      <title-replacements>
+        <replace from="_" to=" "/>
+        <replace from="[Live]" to="(Live)"/>
+        <replace from="UNWANTED" to=""/>
+      </title-replacements>
+    </virtual-layout>
+
+.. confval:: title-replacements replace
+   :type: :confval:`Section`
+   :required: false
+
+Each ``replace`` has a nonempty ``from`` attribute and a ``to`` attribute.
+An empty ``to=""`` removes the matched text. Matching is literal and
+case-sensitive, with no regular expressions. Rules run in the configured order,
+replacing all occurrences; later rules can also replace text inserted by earlier
+rules. Unicode is preserved. Whitespace at the edges of the final result is
+removed.
+
+The format and replacements are used by ``getAudioDetails`` in the standard
+JavaScript audio layouts. They do not apply to the builtin layout. Views such
+as ``All - full name`` still add their own artist/album components around this
+title; include an artist in the format only if that duplication is desired.
+These options do not change source filenames, file tags, artist/album metadata,
+search descriptions, media URLs or existing track-number handling and sorting.
+Artist text already present in a title or fallback filename is not guessed or
+removed automatically; explicit replacements can remove known literal text.
+
+After loading the changed configuration, re-import the affected items to rebuild
+their virtual entries. Existing stored entries are not renamed merely by changing
+the configuration, and scans that skip unchanged files do not rebuild them.
+
 Mapping for Genres
 ------------------
 

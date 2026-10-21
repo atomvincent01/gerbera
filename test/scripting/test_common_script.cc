@@ -706,4 +706,76 @@ TEST_F(CommonScriptTest, abcbox_BoxTypeSpecialChars_ReturnsCorrectBoxBasedOnChar
     result = this->invokeABCBOX(ctx, "#1", boxType, divChar);
     EXPECT_STREQ(result.c_str(), "-^&#'-");
 }
+TEST_F(CommonScriptTest, AudioTitleFormatsPreserveMetadataAndOrdering)
+{
+    const duk_function_list_entry functions[] = { { nullptr, nullptr, 0 } };
+    addGlobalFunctions(ctx, functions);
+    ASSERT_EQ(duk_peval_string(ctx, R"JS(
+        function getRootPath() { return []; }
+        function getYear(date) { return date.slice(0, 4); }
+        var formatKey = '/import/scripting/virtual-layout/attribute::audio-title-format';
+        var rulesKey = '/import/scripting/virtual-layout/title-replacements/replace';
+        var sourceItem = {
+            title: 'Artist - File', location: '/music/Artist - File.flac',
+            aux: { DISCNUMBER: '2/3' }, res: {},
+            metaData: {
+                'dc:title': [' Track_"音楽" '],
+                'upnp:artist': ['Artist', 'Guest'],
+                'upnp:albumArtist': ['Various Artists'], 'upnp:album': ['Album'],
+                'upnp:originalTrackNumber': ['02'], 'dc:date': ['2026-01-01'],
+                'upnp:genre': ['Techno', 'Trance'], 'upnp:composer': ['Composer']
+            }
+        };
+        sourceItem.metaData[M_ALBUMARTIST] = ['Various Artists'];
+        function titleCase(pattern, expected, rules, change) {
+            var item = JSON.parse(JSON.stringify(sourceItem));
+            if (change) change(item);
+            delete config[formatKey];
+            delete config[rulesKey];
+            var baseline = getAudioDetails(JSON.parse(JSON.stringify(item)), '/music');
+            var baselineItem = JSON.parse(JSON.stringify(item));
+            getAudioDetails(baselineItem, '/music');
+            config[formatKey] = pattern;
+            config[rulesKey] = rules || [];
+            var result = getAudioDetails(item, '/music');
+            if (result.title !== expected) throw new Error(pattern + ': ' + result.title);
+            result.title = baseline.title;
+            if (JSON.stringify(result) !== JSON.stringify(baseline) ||
+                JSON.stringify(item) !== JSON.stringify(baselineItem))
+                throw new Error('Formatting changed source metadata or ordering');
+        }
+        var defaultItem = JSON.parse(JSON.stringify(sourceItem));
+        var defaultTitle = getAudioDetails(defaultItem, '/music').title;
+        if (defaultTitle !== 'Artist - Guest -   Track_"音楽" ')
+            throw new Error('Default artist prefix changed: ' + defaultTitle);
+        titleCase('%title%', 'Track_"音楽"');
+        titleCase('%artist% - %title%', 'Artist / Guest - Track_"音楽"');
+        titleCase('%albumartist% | %albumtitle% | %year% | %genre% | %composer%',
+            'Various Artists | Album | 2026 | Techno / Trance | Composer');
+        titleCase('%cdnumber%.%tracknr2%/%tracknr1%/%tracknr3%', '2.02/2/002');
+        titleCase('%filename%', 'Artist - File');
+        titleCase('%% %unknown% %TITLE%', '% %unknown% %TITLE%');
+        titleCase('%title%', 'Artist - File', [], function(i) { delete i.metaData['dc:title']; });
+        titleCase('%albumartist%', 'Various Artists', [], function(i) { delete i.metaData['upnp:artist']; });
+        titleCase('%albumartist%', 'Artist', [], function(i) { delete i.metaData[M_ALBUMARTIST]; });
+        titleCase('%artist%%albumartist%%albumtitle%%genre%%composer%%year%%tracknr2%%cdnumber%',
+            'Track_"音楽"', [], function(i) { i.metaData = { 'dc:title': ['Track_"音楽"'] }; i.aux = {}; });
+        titleCase('%tracknr2%/%tracknr3%', '123/123', [], function(i) { i.metaData['upnp:originalTrackNumber'] = ['123']; });
+        titleCase('%tracknr2%%cdnumber%', 'Track_"音楽"', [], function(i) { i.metaData['upnp:originalTrackNumber'] = ['0']; i.aux.DISCNUMBER = '0'; });
+        titleCase('%title%', 'Track "音楽"', [{from:'_',to:' '}]);
+        titleCase('%title%', 'Track_音楽', [{from:'"',to:''}]);
+        titleCase('ab a', 'Xb X', [{from:'a',to:'ab'},{from:'ab',to:'X'}]);
+        titleCase('a', 'first', [{from:'a',to:'first'},{from:'a',to:'second'}]);
+        titleCase('A $1 [x]', 'A literal 音楽', [{from:'a',to:'z'},{from:'$1',to:'literal'},{from:'[x]',to:'音楽'}]);
+        titleCase('REMOVE', 'Track_"音楽"', [{from:'REMOVE',to:''}]);
+        titleCase('%filename%', 'Title', [], function(i) { i.location = 'C:\\music\\Title.mp3'; });
+        titleCase('%title%', 'Track_"音楽"', [{from:'',to:'ignored'}]);
+        true;
+    )JS"),
+        DUK_EXEC_SUCCESS)
+        << duk_safe_to_string(ctx, -1);
+    EXPECT_TRUE(duk_get_boolean(ctx, -1));
+    duk_pop(ctx);
+}
+
 #endif
