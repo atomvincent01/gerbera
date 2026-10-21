@@ -1,0 +1,44 @@
+name: Web UI stability preflight
+
+on:
+  push:
+    branches: [preflight/web-ui-stability]
+
+permissions:
+  contents: read
+
+jobs:
+  browser:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      DETECT_CHROMEDRIVER_VERSION: true
+      npm_package_config_webserver_host: 127.0.0.1
+    defaults:
+      run:
+        working-directory: gerbera-web
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+      - name: Install the locked dependencies
+        run: npm ci --legacy-peer-deps
+      - name: Lint, mock isolation and component tests
+        run: |
+          npm run lint
+          npm run test:mock
+          npm run test
+      - name: Three complete browser runs without retries
+        run: |
+          for attempt in 1 2 3; do
+            echo "Browser run $attempt"
+            npm run test:e2e
+          done
+      - name: Upload failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: web-preflight-failure-diagnostics
+          path: gerbera-web/_build/e2e-failures/
+          if-no-files-found: ignore
