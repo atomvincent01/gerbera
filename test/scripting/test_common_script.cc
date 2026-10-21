@@ -706,4 +706,61 @@ TEST_F(CommonScriptTest, abcbox_BoxTypeSpecialChars_ReturnsCorrectBoxBasedOnChar
     result = this->invokeABCBOX(ctx, "#1", boxType, divChar);
     EXPECT_STREQ(result.c_str(), "-^&#'-");
 }
+class AudioArtistPrefixTest : public ScriptTestFixture, public WithParamInterface<std::string> {
+};
+
+TEST_P(AudioArtistPrefixTest, ControlsCompilationPrefixWithoutChangingMetadata)
+{
+    const auto& option = GetParam();
+    const duk_function_list_entry functions[] = { { nullptr, nullptr, 0 } };
+    std::map<std::string_view, std::map<std::string_view, std::string_view>> dictionaries;
+    if (option != "missing-section") {
+        auto& options = dictionaries["/import/scripting/virtual-layout/script-options/script-option"];
+        if (option != "missing-option")
+            options["artistPrefix"] = option;
+    }
+    addGlobalFunctions(ctx, functions, {}, {}, dictionaries);
+
+    ASSERT_EQ(duk_peval_string(ctx, R"JS(
+        function getRootPath() { return []; }
+        function getYear(date) { return date.slice(0, 4); }
+        var prefixItem = {
+            title: 'Track', location: '/music/Artist - Track.flac', aux: {}, res: {},
+            metaData: {
+                'dc:title': ['Track'],
+                'upnp:artist': ['Track artist', 'Guest'],
+                'upnp:albumArtist': ['Various Artists'],
+                'upnp:album': ['Album'],
+                'upnp:originalTrackNumber': ['02'],
+                'dc:date': ['2026-01-01'],
+                'upnp:date': ['2026']
+            }
+        };
+        var prefixMetadata = JSON.stringify(prefixItem.metaData);
+        var prefixResult = getAudioDetails(prefixItem, '/music');
+    )JS"), DUK_EXEC_SUCCESS)
+        << duk_safe_to_string(ctx, -1);
+    duk_pop(ctx);
+
+    ASSERT_EQ(duk_peval_string(ctx, "prefixResult.title"), DUK_EXEC_SUCCESS);
+    EXPECT_STREQ(duk_get_string(ctx, -1), option == "hide" ? "Track" : "Track artist - Guest - Track");
+    duk_pop(ctx);
+    ASSERT_EQ(duk_peval_string(ctx, "prefixResult.trackTitle === 'Track' && prefixResult.track === '02 ' && prefixResult.artistFull === 'Track artist / Guest' && prefixResult.albumArtist === 'Various Artists' && JSON.stringify(prefixItem.metaData) === prefixMetadata && prefixItem.title === 'Track' && prefixItem.location === '/music/Artist - Track.flac'"), DUK_EXEC_SUCCESS);
+    EXPECT_TRUE(duk_get_boolean(ctx, -1));
+    duk_pop(ctx);
+
+    // Matching artists need no automatic prefix, regardless of the option.
+    ASSERT_EQ(duk_peval_string(ctx, "prefixItem.metaData['upnp:artist'] = ['Track artist']; prefixItem.metaData['upnp:albumArtist'] = ['Track artist']; getAudioDetails(prefixItem, '/music').title"), DUK_EXEC_SUCCESS);
+    EXPECT_STREQ(duk_get_string(ctx, -1), "Track");
+    duk_pop(ctx);
+
+    // Hiding the automatic prefix must not strip text from a fallback filename.
+    ASSERT_EQ(duk_peval_string(ctx, "delete prefixItem.metaData['dc:title']; prefixItem.title = 'Artist - Filename'; getAudioDetails(prefixItem, '/music').title"), DUK_EXEC_SUCCESS);
+    EXPECT_STREQ(duk_get_string(ctx, -1), "Artist - Filename");
+    duk_pop(ctx);
+}
+
+INSTANTIATE_TEST_SUITE_P(ArtistPrefixOptions, AudioArtistPrefixTest,
+    Values("missing-section", "missing-option", "show", "hide", "invalid"));
+
 #endif

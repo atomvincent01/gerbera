@@ -830,6 +830,35 @@ Set option ``value`` for option ``name``.
 
     Value of the option.
 
+Artist Prefix in Audio Titles
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+The standard JavaScript audio layouts prepend the track artist to a title when
+the track artist differs from the album artist, for example on compilations.
+To display only the track title in these cases, add the following option under
+``import/scripting/virtual-layout`` in the existing configuration:
+
+.. code-block:: xml
+
+    <script-options>
+      <script-option name="artistPrefix" value="hide"/>
+    </script-options>
+
+``artistPrefix`` accepts ``show`` and ``hide``. The default is ``show``; omitting
+the option preserves the existing behavior. Only the exact value ``hide``
+disables the automatic prefix. Other values retain the default behavior.
+
+The option is used by the JavaScript audio layouts through ``getAudioDetails``.
+It does not apply to the builtin layout. Views that explicitly include artists,
+such as ``All - full name``, continue to do so. The option does not change artist
+or album-artist metadata, existing track-number handling, source filenames or
+file tags. A prefix already
+contained in a title tag or a fallback filename is not removed.
+
+After loading the changed configuration, re-import the affected items to rebuild
+their virtual entries. Existing stored entries are not renamed merely by changing
+the configuration, and scans that skip unchanged files do not rebuild them.
+
 Mapping for Genres
 ------------------
 

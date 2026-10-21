@@ -485,7 +485,9 @@ function getAudioDetails(obj, rootPath) {
     track = track + ' ';
   }
 
-  if (artist.join(' - ') !== aartist && aartist !== '') {
+  const scriptOptions = config['/import/scripting/virtual-layout/script-options/script-option'];
+  const artistPrefix = !scriptOptions || scriptOptions['artistPrefix'] !== 'hide';
+  if (artistPrefix && artist.join(' - ') !== aartist && aartist !== '') {
     title = artist.join(' - ') + ' - ' + title;
   }
 
