@@ -1,12 +1,13 @@
-name: "CodeQL"
+name: "CodeQL audio title format preflight"
 
 on:
   push:
-    branches: [ master ]
-  pull_request:
-    branches: [ master ]
-  schedule:
-    - cron: '22 2 * * 1'
+    branches: [preflight/audio-title-format-codeql]
+
+permissions:
+  contents: read
+  actions: read
+  security-events: write
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -16,6 +17,7 @@ jobs:
   analyze:
     name: Analyze
     runs-on: ubuntu-24.04
+    timeout-minutes: 60
 
     strategy:
       fail-fast: false
