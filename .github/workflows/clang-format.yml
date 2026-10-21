@@ -1,6 +1,9 @@
 name: lint-clang-format
 
-on: [push, pull_request]
+on:
+  push:
+    branches-ignore: [preflight/audio-artist-prefix-codeql]
+  pull_request:
 
 jobs:
   lint:
