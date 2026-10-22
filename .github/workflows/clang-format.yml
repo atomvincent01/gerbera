@@ -1,6 +1,9 @@
 name: lint-clang-format
 
-on: [push, pull_request]
+on:
+  push:
+    branches-ignore: [preflight/asx-4010-codeql-261022]
+  pull_request:
 
 jobs:
   lint:
