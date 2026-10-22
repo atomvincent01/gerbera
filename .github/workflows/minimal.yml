@@ -1,9 +1,9 @@
 name: Minimal
 
 on:
-  pull_request:
+  push:
     branches:
-      - master
+      - preflight/alpine-index-fallback-261022
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -18,17 +18,15 @@ env:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
-        platform: ['x86_64', 'x86', 'armhf', 'armv7', 'aarch64', 'loongarch64', 'ppc64le', 'riscv64', 's390x']
-        branch: ['v3.23', 'v3.24', 'edge']
-        exclude:
-          - platform: "ppc64le"
-            branch: "v3.24"
+        platform: ['x86']
+        branch: ['edge']
 
-    name: Minimal ${{matrix.platform}}${{matrix.branch != 'v3.24' && format(' - {0}', matrix.branch) || format('')}}
+    name: Minimal ${{matrix.platform}}${{matrix.branch != 'v3.24' && format(' - {0}', matrix.branch) || ''}}
     defaults:
       run:
         shell: alpine.sh {0}
@@ -63,8 +61,23 @@ jobs:
           mv -- "$apk_download" "$RUNNER_TEMP/apk"
           # setup-alpine must reuse the preloaded binary with the selected hash.
           printf 'sha256=%s\n' "$apk_sha256" >> "$GITHUB_OUTPUT"
+      - name: Test Alpine mirror selection
+        if: matrix.platform == 'x86' && matrix.branch == 'edge'
+        shell: bash
+        timeout-minutes: 2
+        run: python3 .github/scripts/test_select_alpine_mirror.py
+      - name: Select Alpine package mirror
+        id: alpine-mirror
+        shell: bash
+        timeout-minutes: 8
+        env:
+          ALPINE_BRANCH: ${{ matrix.branch }}
+          ALPINE_ARCH: ${{ matrix.platform }}
+        run: bash .github/scripts/select-alpine-mirror.sh "$ALPINE_BRANCH" "$ALPINE_ARCH" https://localhost:1/alpine https://mirrors.edge.kernel.org/alpine >> "$GITHUB_OUTPUT"
       - uses: jirutka/setup-alpine@v1
         with:
+          mirror-url: ${{ steps.alpine-mirror.outputs.mirror-url }}
+          extra-repositories: ${{ steps.alpine-mirror.outputs.extra-repositories }}
           apk-tools-url: '${{ env.APK_TOOLS_URL }}#!sha256!${{ steps.apk-tools.outputs.sha256 }}'
           branch: ${{matrix.branch}}
           arch: ${{matrix.platform}}

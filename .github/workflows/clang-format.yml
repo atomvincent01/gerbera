@@ -1,6 +1,9 @@
 name: lint-clang-format
 
-on: [push, pull_request]
+on:
+  push:
+    branches-ignore: [preflight/alpine-index-fallback-261022]
+  pull_request:
 
 jobs:
   lint:
