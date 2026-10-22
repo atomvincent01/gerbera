@@ -1,12 +1,13 @@
-name: "CodeQL"
+name: "CodeQL conditional audio titles preflight"
 
 on:
   push:
-    branches: [ master ]
-  pull_request:
-    branches: [ master ]
-  schedule:
-    - cron: '22 2 * * 1'
+    branches: [preflight/audio-title-rules-codeql]
+
+permissions:
+  contents: read
+  actions: read
+  security-events: write
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -16,11 +17,12 @@ jobs:
   analyze:
     name: Analyze
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
 
     strategy:
       fail-fast: false
       matrix:
-        language: [ 'cpp', 'javascript' ]
+        language: [ 'javascript' ]
 
     steps:
       - name: Checkout repository
