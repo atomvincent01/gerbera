@@ -1,12 +1,13 @@
-name: "CodeQL"
+name: "CodeQL PR4011 rebase preflight"
 
 on:
   push:
-    branches: [ master ]
-  pull_request:
-    branches: [ master ]
-  schedule:
-    - cron: '22 2 * * 1'
+    branches: [preflight/asx-4011-codeql-261022]
+
+permissions:
+  contents: read
+  actions: read
+  security-events: write
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -16,9 +17,11 @@ jobs:
   analyze:
     name: Analyze
     runs-on: ubuntu-24.04
+    timeout-minutes: 45
 
     strategy:
       fail-fast: false
+      max-parallel: 1
       matrix:
         language: [ 'cpp', 'javascript' ]
 
