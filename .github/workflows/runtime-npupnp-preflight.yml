@@ -35,9 +35,10 @@ jobs:
       with:
         fetch-depth: 0
     - name: Fetch official upstream version tags
-      run: 'git fetch --no-tags https://github.com/gerbera/gerbera.git ''+refs/tags/*:refs/tags/*''
+      run: 'git -c safe.directory="$PWD" fetch --no-tags https://github.com/gerbera/gerbera.git
+        ''+refs/tags/*:refs/tags/*''
 
-        git describe --tags'
+        git -c safe.directory="$PWD" describe --tags'
     - name: Build and test
       run: 'bash scripts/debian/build-deb.sh HEAD ${{ matrix.head.lib }}
 
