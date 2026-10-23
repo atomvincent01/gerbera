@@ -1,0 +1,23 @@
+name: Readiness runtime macOS diagnostics
+on:
+  workflow_dispatch:
+jobs:
+  runtime:
+    runs-on: macos-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v7
+      - name: Run unchanged runtime tests with Python stack diagnostics
+        timeout-minutes: 4
+        run: |
+          mkdir -p "$RUNNER_TEMP/runtime-diagnostics"
+          cat > "$RUNNER_TEMP/runtime-diagnostics/sitecustomize.py" <<'PY'
+          import faulthandler
+          import os
+          import sys
+          faulthandler.enable()
+          faulthandler.dump_traceback_later(10, repeat=True)
+          print(f"DIAGNOSTIC pid={os.getpid()} executable={sys.executable}", file=sys.stderr, flush=True)
+          PY
+          export PYTHONPATH="$RUNNER_TEMP/runtime-diagnostics${PYTHONPATH:+:$PYTHONPATH}"
+          python3 -u -X faulthandler test/content/test_integration_runtime.py -v
