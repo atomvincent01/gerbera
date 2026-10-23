@@ -1,6 +1,9 @@
 name: lint-clang-format
 
-on: [push, pull_request]
+on:
+  push:
+    branches-ignore: [preflight/review-4026-codeql-261023]
+  pull_request:
 
 jobs:
   lint:
