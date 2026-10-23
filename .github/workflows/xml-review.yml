@@ -1,6 +1,8 @@
 name: Readiness runtime macOS diagnostics
 on:
   workflow_dispatch:
+  push:
+    branches: [diag/runtime-macos-261023]
 jobs:
   runtime:
     runs-on: macos-latest
