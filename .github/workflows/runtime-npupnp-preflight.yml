@@ -1,0 +1,51 @@
+name: NPUPNP readiness regression
+'on':
+  push:
+    branches:
+    - preflight/runtime-npupnp-261023
+permissions:
+  contents: read
+jobs:
+  npupnp:
+    strategy:
+      matrix:
+        head:
+        - name: npupnp
+          lib: npupnp
+    runs-on: ubuntu-latest
+    name: head-${{ matrix.head.name }}
+    container:
+      image: ubuntu:26.04
+      env:
+        DEBIAN_FRONTEND: noninteractive
+        TZ: Etc/UTC
+        GH_ACTIONS: y
+        GRB_TEST_ARTIFACTS: /tmp/gerbera-test-artifacts
+    steps:
+    - name: Install script pre-reqs
+      shell: bash
+      run: 'ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
+
+        apt-get update -y
+
+        apt-get install -y lsb-release sudo wget curl git
+
+        '
+    - uses: actions/checkout@v7
+      with:
+        fetch-depth: 0
+    - name: Build and test
+      run: 'bash scripts/debian/build-deb.sh HEAD ${{ matrix.head.lib }}
+
+        '
+    - name: Repeat successful real playlist regression three times
+      run: ctest --test-dir build-deb -R '^PlaylistUpdateIntegration$' --output-on-failure
+        --repeat until-fail:3
+    - name: Retain failure diagnostics
+      if: failure()
+      uses: actions/upload-artifact@v7
+      with:
+        name: npupnp-integration-failure
+        path: /tmp/gerbera-test-artifacts
+        if-no-files-found: ignore
+    timeout-minutes: 35
