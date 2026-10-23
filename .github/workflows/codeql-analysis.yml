@@ -1,12 +1,13 @@
-name: "CodeQL"
+name: "CodeQL PR4010 reviewed source"
 
 on:
   push:
-    branches: [ master ]
-  pull_request:
-    branches: [ master ]
-  schedule:
-    - cron: '22 2 * * 1'
+    branches: [preflight/review-4010-codeql-261023]
+
+permissions:
+  contents: read
+  actions: read
+  security-events: write
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -16,11 +17,13 @@ jobs:
   analyze:
     name: Analyze
     runs-on: ubuntu-24.04
+    timeout-minutes: 45
 
     strategy:
       fail-fast: false
+      max-parallel: 1
       matrix:
-        language: [ 'cpp', 'javascript' ]
+        language: [ 'cpp', 'javascript', 'python' ]
 
     steps:
       - name: Checkout repository
@@ -53,6 +56,7 @@ jobs:
           config-file: ./.github/codeql/codeql-config.yml
 
       - name: Autobuild
+        if: matrix.language != 'python'
         uses: github/codeql-action/autobuild@v4
 
       - name: Perform CodeQL Analysis
