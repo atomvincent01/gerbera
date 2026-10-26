@@ -1,0 +1,74 @@
+name: Playlist update GCC 15 trace
+
+on:
+  push:
+    branches: [diagnostic/4026-gcc15-trace-261026]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  gcc15:
+    runs-on: ubuntu-26.04
+    env:
+      CC: gcc-15
+      CXX: g++-15
+      CONAN_RUN_TESTS: 1
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 2
+      - run: sudo apt-get update -y && sudo apt-get install -y openssl
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - run: |
+          pip install -U --no-cache-dir conan
+          conan profile detect --name default
+      - uses: actions/cache@v6
+        with:
+          path: ~/.conan2
+          key: ${{ runner.os }}-conan2-gcc-15-${{ hashFiles('conanfile.py') }}-${{ hashFiles('conan/*') }}
+          restore-keys: |
+            ${{ runner.os }}-conan2-gcc-15-
+      - name: Prepare trace artifacts
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/gerbera-gcc15-trace/tmp"
+          echo "TMPDIR=$RUNNER_TEMP/gerbera-gcc15-trace/tmp" >> "$GITHUB_ENV"
+          {
+            git log -2 --format=fuller
+            "$CC" --version
+            "$CXX" --version
+            conan --version
+            cat /etc/os-release
+            cat /proc/sys/kernel/core_pattern
+          } > "$RUNNER_TEMP/gerbera-gcc15-trace/environment.txt" 2>&1
+      - name: Exact GCC 15 Conan development build and tests
+        shell: bash
+        run: |
+          set -o pipefail
+          ulimit -c unlimited
+          conan remove 'gerbera/*' -c 2>&1 | tee "$RUNNER_TEMP/gerbera-gcc15-trace/conan-remove.log"
+          conan create -pr ./conan/dev -o='gerbera/*:icu=False' -o='gerbera/*:postgres=False' -o='gerbera/*:libsystemd=False' --build=missing --version dev . 2>&1 | tee "$RUNNER_TEMP/gerbera-gcc15-trace/conan-full.log"
+      - name: Preserve complete diagnostics
+        if: always()
+        shell: bash
+        run: |
+          out="$RUNNER_TEMP/gerbera-gcc15-trace"
+          mkdir -p "$out/build-evidence" "$out/cores"
+          find "$HOME/.conan2" -type f \( -name LastTest.log -o -name LastTestsFailed.log -o -name CTestCostData.txt -o -name CMakeCache.txt -o -name compile_commands.json -o -name CTestTestfile.cmake -o -name '*junit*.xml' -o -name '*JUnit*.xml' -o -name conaninfo.txt -o -name graph_info.json -o -name testcontent -o -name gerbera \) -exec cp --parents '{}' "$out/build-evidence/" ';'
+          find "$HOME/.conan2" "$GITHUB_WORKSPACE" "$out/tmp" -type f \( -name core -o -name 'core.[0-9]*' \) -exec cp --parents '{}' "$out/cores/" ';'
+          binary=$(find "$HOME/.conan2" -type f -name testcontent -executable -print -quit)
+          if command -v gdb >/dev/null && [ -n "$binary" ]; then
+            while IFS= read -r -d '' core; do
+              gdb --batch -ex 'set pagination off' -ex 'thread apply all bt full' "$binary" "$core" > "$out/gdb-$(basename "$core").txt" 2>&1 || true
+            done < <(find "$out/cores" -type f \( -name core -o -name 'core.[0-9]*' \) -print0)
+          fi
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: playlist-update-gcc15-trace-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/gerbera-gcc15-trace
+          include-hidden-files: true

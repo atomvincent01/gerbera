@@ -21,11 +21,18 @@
     $Id$
 */
 
+#include "util/logger.h"
+
 #include <gmock/gmock.h>
 
 int main(int argc, char** argv)
 {
     testing::InitGoogleMock(&argc, argv);
+#ifdef GRBDEBUG
+    GrbLogger::Logger.init(GrbLogger::makeFacility("Thread|Sqlite3|SQL|Content|Autoscan|Inotify|Script|Layout"));
+#endif
+    spdlog::set_pattern("%Y-%m-%dT%H:%M:%S.%e [%P:%t] %l [%s:%# %!] %v");
+    spdlog::set_level(spdlog::level::debug);
     int ret = RUN_ALL_TESTS();
     return ret;
 }
