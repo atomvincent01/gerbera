@@ -362,47 +362,6 @@ function mapModel(model) {
   return { value: model, mapped: mapped };
 }
 
-// doc-map-audio-details-begin
-var audioTitleReplacementSource;
-var audioTitleReplacementRules = [];
-
-function getAudioTitleReplacements() {
-  const source = config['/import/scripting/virtual-layout/title-replacements/replace'];
-  if (source === audioTitleReplacementSource) {
-    return audioTitleReplacementRules;
-  }
-  audioTitleReplacementSource = source;
-  audioTitleReplacementRules = [];
-  const tags = {
-    title: M_TITLE, artist: M_ARTIST, albumartist: M_ALBUMARTIST,
-    albumtitle: M_ALBUM, genre: M_GENRE, composer: M_COMPOSER, year: M_DATE
-  };
-  for (var i = 0; source && i < source.length; i++) {
-    const rule = source[i];
-    if (!rule.from) {
-      continue;
-    }
-    var from = rule.from;
-    const regex = rule.regex === 'yes' || rule.regex === 'true';
-    if (regex) {
-      try {
-        from = new RegExp(from, 'g');
-      } catch (error) {
-        print('Ignoring invalid audio title replacement: ' + rule.from + ' (' + error + ')');
-        continue;
-      }
-    }
-    const conditions = [];
-    for (var name in tags) {
-      if (rule['if-' + name]) {
-        conditions.push({ tag: tags[name], value: rule['if-' + name] });
-      }
-    }
-    audioTitleReplacementRules.push({ from: from, to: rule.to || '', regex: regex, conditions: conditions });
-  }
-  return audioTitleReplacementRules;
-}
-
 function audioTitleNumber(value, width) {
   const match = /^\s*(\d+)/.exec(String(value || ''));
   if (!match) {
@@ -445,7 +404,7 @@ function formatAudioTitle(obj, audio, trackNumber, discNumber) {
     return Object.prototype.hasOwnProperty.call(fields, name) ? fields[name] : token;
   });
 
-  const replacements = getAudioTitleReplacements();
+  const replacements = config.audioTitleReplacements || [];
   for (var i = 0; i < replacements.length; i++) {
     const rule = replacements[i];
     if (rule.conditions.every(function (condition) {
@@ -459,6 +418,7 @@ function formatAudioTitle(obj, audio, trackNumber, discNumber) {
   return title.trim() || fields.title || filename;
 }
 
+// doc-map-audio-details-begin
 function getAudioDetails(obj, rootPath) {
   var trackTitle = getTitle(obj);
   var title = trackTitle;

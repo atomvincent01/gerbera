@@ -24,6 +24,7 @@
 
 #include "metadata/metadata_enums.h"
 #include "util/grb_fs.h"
+#include "util/logger.h"
 #include "util/tools.h"
 
 #include "mock/duk_helper.h"
@@ -32,6 +33,9 @@
 #include <algorithm>
 #include <duktape.h>
 #include <map>
+#include <memory>
+#include <spdlog/sinks/ostream_sink.h>
+#include <sstream>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -735,19 +739,26 @@ struct AudioTitleCase {
 
 class AudioTitleScriptTest : public CommonScriptTest {
 protected:
-    static std::vector<std::string> warnings;
-    static duk_ret_t printWarning(duk_context* context)
-    {
-        warnings.push_back(ScriptTestFixture::print(context));
-        return 1;
-    }
+    std::ostringstream warnings;
+    std::shared_ptr<spdlog::logger> previousLogger;
 
     void SetUp() override
     {
         CommonScriptTest::SetUp();
-        warnings.clear();
-        const duk_function_list_entry functions[] { { "print", printWarning, DUK_VARARGS }, { nullptr, nullptr, 0 } };
+        previousLogger = spdlog::default_logger();
+        auto sink = std::make_shared<spdlog::sinks::ostream_sink_mt>(warnings);
+        auto logger = std::make_shared<spdlog::logger>("audio-title-script-test", sink);
+        logger->set_pattern("%v");
+        logger->set_level(spdlog::level::warn);
+        spdlog::set_default_logger(std::move(logger));
+        const duk_function_list_entry functions[] { { nullptr, nullptr, 0 } };
         addGlobalFunctions(ctx, functions);
+    }
+
+    void TearDown() override
+    {
+        spdlog::set_default_logger(std::move(previousLogger));
+        CommonScriptTest::TearDown();
     }
 
     void configure(const char* pattern, const AudioTitleRules& rules = {})
@@ -848,20 +859,14 @@ protected:
 
     void* preparedRules()
     {
-        duk_get_global_string(ctx, "getAudioTitleReplacements");
-        if (duk_pcall(ctx, 0) != DUK_EXEC_SUCCESS) {
-            ADD_FAILURE() << duk_safe_to_string(ctx, -1);
-            duk_pop(ctx);
-            return nullptr;
-        }
+        duk_get_global_string(ctx, "config");
+        duk_get_prop_string(ctx, -1, "audioTitleReplacements");
         EXPECT_TRUE(duk_is_array(ctx, -1));
         auto result = duk_get_heapptr(ctx, -1);
-        duk_pop(ctx);
+        duk_pop_2(ctx);
         return result;
     }
 };
-
-std::vector<std::string> AudioTitleScriptTest::warnings;
 
 class AudioTitleFormatTest : public AudioTitleScriptTest,
                              public ::testing::WithParamInterface<AudioTitleCase> { };
@@ -961,14 +966,16 @@ TEST_F(AudioTitleScriptTest, InvalidRegexIsLoggedOnceAndDoesNotHideLaterRules)
     configure("%title%", { { { "from", "(" }, { "to", "bad" }, { "regex", "yes" } }, { { "from", "_" }, { "to", " " } } });
     auto* first = preparedRules();
     ASSERT_NE(first, nullptr);
-    EXPECT_EQ(warnings.size(), 1U);
+    const auto warning = warnings.str();
+    EXPECT_NE(warning.find("Ignoring invalid audio title replacement:"), std::string::npos);
+    EXPECT_EQ(std::count(warning.begin(), warning.end(), '\n'), 1);
     duk_push_heapptr(ctx, first);
     EXPECT_EQ(duk_get_length(ctx, -1), 1U);
     duk_pop(ctx);
     EXPECT_EQ(preparedRules(), first);
-    EXPECT_EQ(warnings.size(), 1U);
+    EXPECT_EQ(warnings.str(), warning);
     EXPECT_EQ(invoke().title, "Track \"音楽\"");
-    EXPECT_EQ(warnings.size(), 1U);
+    EXPECT_EQ(warnings.str(), warning);
 }
 
 TEST_F(AudioTitleScriptTest, CachedRegexResetsStateAndNewConfigurationReplacesRules)
@@ -976,6 +983,10 @@ TEST_F(AudioTitleScriptTest, CachedRegexResetsStateAndNewConfigurationReplacesRu
     configure("A  B", { { { "from", "\\s+" }, { "to", " " }, { "regex", "yes" } } });
     auto* first = preparedRules();
     ASSERT_NE(first, nullptr);
+    for (const auto* name : { "audioTitleReplacementSource", "audioTitleReplacementRules" }) {
+        EXPECT_FALSE(duk_get_global_string(ctx, name));
+        duk_pop(ctx);
+    }
     duk_push_heapptr(ctx, first);
     duk_put_global_string(ctx, "savedTitleRules");
     for (int repeat = 0; repeat < 3; ++repeat) {

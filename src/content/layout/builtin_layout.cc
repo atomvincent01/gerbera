@@ -60,12 +60,6 @@ BuiltinLayout::BuiltinLayout(std::shared_ptr<Content> content)
     , genreMap(this->config->getDictionaryOption(ConfigVal::IMPORT_SCRIPTING_IMPORT_GENRE_MAP))
 {
     // Prepare configured rules once; builtin keeps its existing native regex engine.
-    const std::pair<const char*, MetadataFields> tags[] {
-        { "title", MetadataFields::M_TITLE }, { "artist", MetadataFields::M_ARTIST },
-        { "albumartist", MetadataFields::M_ALBUMARTIST }, { "albumtitle", MetadataFields::M_ALBUM },
-        { "genre", MetadataFields::M_GENRE }, { "composer", MetadataFields::M_COMPOSER },
-        { "year", MetadataFields::M_DATE }
-    };
     for (const auto& attributes : config->getVectorOption(ConfigVal::IMPORT_SCRIPTING_AUDIO_TITLE_REPLACEMENTS)) {
         const std::map<std::string, std::string> values(attributes.begin(), attributes.end());
         AudioTitleReplacement rule;
@@ -82,7 +76,7 @@ BuiltinLayout::BuiltinLayout(std::shared_ptr<Content> content)
                 continue;
             }
         }
-        for (const auto& [name, tag] : tags) {
+        for (const auto& [name, tag] : MetaEnumMapper::audioTitleFields) {
             const auto value = getValueOrDefault(values, std::string("if-") + name);
             if (!value.empty())
                 rule.conditions.emplace_back(tag, value);
