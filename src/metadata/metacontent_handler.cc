@@ -26,6 +26,7 @@
 
 #include "metacontent_handler.h" // API
 
+#include "cds/cds_container.h"
 #include "cds/cds_item.h"
 #include "cds/cds_objects.h"
 #include "cds/cds_resource.h"
@@ -75,14 +76,14 @@ std::vector<fs::path> ContentPathSetup::getContentPath(
         std::vector<std::string> selectedFiles;
         for (const auto& name : files) {
             if (name == "%upnpclass%.png") {
-                if (mode == ContentPathMode::Primary)
+                if (mode != ContentPathMode::Fallback)
                     continue;
                 auto className = obj->getClass();
                 while (startswith(className, UPNP_CLASS_CONTAINER)) {
                     selectedFiles.push_back(className + ".png");
                     className.erase(className.find_last_of('.'));
                 }
-            } else if (mode == ContentPathMode::Primary) {
+            } else if (mode != ContentPathMode::Fallback) {
                 selectedFiles.push_back(name);
             }
         }
@@ -375,6 +376,26 @@ std::shared_ptr<CdsResource> ContainerArtHandler::fillFallbackMetadata(const std
     auto resource = obj->getResource(ResourcePurpose::Thumbnail);
     resource->addOption(RESOURCE_OPTION_CONTAINER_ART_FALLBACK, "yes");
     return resource;
+}
+
+std::shared_ptr<CdsResource> ContainerArtHandler::findArtwork(
+    const std::shared_ptr<CdsContainer>& obj,
+    const fs::path& folder,
+    ContentPathMode mode)
+{
+    auto location = mode == ContentPathMode::Named ? fs::path(config->getOption(ConfigVal::IMPORT_RESOURCES_CONTAINERART_LOCATION)) : folder;
+    if (location.empty())
+        return nullptr;
+    auto target = std::make_shared<CdsContainer>(obj->getEntryType());
+    obj->copyTo(target);
+    target->clearResources();
+    if (mode == ContentPathMode::Primary)
+        target->setLocation(folder, obj->getEntryType());
+    auto paths = setup->getContentPath(target, SETTING_CONTAINERART, location, mode);
+    if (paths.front().empty())
+        return mode == ContentPathMode::Named ? fillFallbackMetadata(target) : nullptr;
+    fillMetadata(target, { paths.front() });
+    return target->getResource(ResourcePurpose::Thumbnail);
 }
 
 bool ContainerArtHandler::fillMetadata(

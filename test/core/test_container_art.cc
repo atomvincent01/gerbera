@@ -19,9 +19,11 @@
 #include "../mock/config_mock.h"
 #include "../mock/database_mock.h"
 #include "cds/cds_container.h"
+#include "cds/cds_item.h"
 #include "cds/cds_resource.h"
 #include "config/config_definition.h"
 #include "config/config_val.h"
+#include "config/result/autoscan.h"
 #include "config/result/directory_tweak.h"
 #include "content/import_service.h"
 #include "context.h"
@@ -31,8 +33,10 @@
 #include "util/string_converter.h"
 #include "util/tools.h"
 
+#include <chrono>
 #include <fstream>
 #include <gtest/gtest.h>
+#include <map>
 #include <memory>
 #include <string>
 #include <vector>
@@ -41,10 +45,13 @@ namespace {
 class ContainerArtConfig : public ConfigMock {
 public:
     fs::path directory;
+    std::string priority;
     std::vector<std::string> files { "%upnpclass%-%filename%.png", "folder.jpg", "%upnpclass%.png" };
 
     std::string getOption(ConfigVal option) const override
     {
+        if (option == ConfigVal::IMPORT_RESOURCES_CONTAINERART_PRIORITY)
+            return priority;
         if (option == ConfigVal::IMPORT_RESOURCES_CONTAINERART_LOCATION)
             return directory.string();
         if (option == ConfigVal::IMPORT_FILESYSTEM_CHARSET || option == ConfigVal::IMPORT_METADATA_CHARSET)
@@ -62,6 +69,7 @@ class ContainerArtDatabase : public DatabaseMock {
 public:
     using DatabaseMock::DatabaseMock;
     std::shared_ptr<CdsContainer> container;
+    std::map<int, std::shared_ptr<CdsObject>> tracks;
 
     bool addContainer(int parentId, std::string path, const std::shared_ptr<CdsContainer>& object, int* id) override
     {
@@ -73,7 +81,13 @@ public:
         return true;
     }
 
-    std::shared_ptr<CdsObject> loadObject(int id, const std::string& group) override { return container; }
+    std::shared_ptr<CdsObject> loadObject(int id, const std::string& group) override
+    {
+        const auto track = tracks.find(id);
+        if (track != tracks.end())
+            return track->second;
+        return container && container->getID() == id ? container : nullptr;
+    }
 };
 
 class ContainerArtTest : public ::testing::Test {
@@ -83,26 +97,31 @@ protected:
         directory = fs::temp_directory_path() / ("gerbera-container-art-" + generateRandomId());
         fs::create_directories(directory / "theme");
         fs::create_directories(directory / "album");
+        config = std::make_shared<ContainerArtConfig>();
+        config->directory = directory / "theme";
+        definition = std::make_shared<ConfigDefinition>();
+        definition->init(definition);
+        database = std::make_shared<ContainerArtDatabase>(config);
+        converters = std::make_shared<ConverterManager>(config);
+        auto mime = std::make_shared<Mime>(config);
+        context = std::make_shared<Context>(definition, config, nullptr, mime, database, nullptr, converters);
     }
 
     void TearDown() override { fs::remove_all(directory); }
 
     fs::path directory;
+    std::shared_ptr<ContainerArtConfig> config;
+    std::shared_ptr<ConfigDefinition> definition;
+    std::shared_ptr<ContainerArtDatabase> database;
+    std::shared_ptr<ConverterManager> converters;
+    std::shared_ptr<Context> context;
 };
 }
 
 TEST_F(ContainerArtTest, TypedDefaultsPreserveNamedCategoriesLocalCoversAndLaterInheritedCovers)
 {
-    auto config = std::make_shared<ContainerArtConfig>();
-    config->directory = directory / "theme";
     for (const auto* name : { "object.container-Audio.png", "object.container.album.musicAlbum-Alben.png", "object.container.album.png", "object.container.png", "Audio.png", "titel.png" })
         std::ofstream(config->directory / name) << "artwork fixture";
-    auto definition = std::make_shared<ConfigDefinition>();
-    definition->init(definition);
-    auto database = std::make_shared<ContainerArtDatabase>(config);
-    auto converters = std::make_shared<ConverterManager>(config);
-    auto mime = std::make_shared<Mime>(config);
-    auto context = std::make_shared<Context>(definition, config, nullptr, mime, database, nullptr, converters);
     ContainerArtHandler handler(context);
     std::vector<int> newIds;
     auto root = std::make_shared<CdsContainer>("Audio");
@@ -162,4 +181,117 @@ TEST_F(ContainerArtTest, TypedDefaultsPreserveNamedCategoriesLocalCoversAndLater
     ContainerArtHandler legacyHandler(context);
     auto legacyContainer = std::make_shared<CdsContainer>("No configured default");
     EXPECT_EQ(legacyHandler.fillFallbackMetadata(legacyContainer), nullptr);
+}
+
+TEST_F(ContainerArtTest, EmbeddedAudioArtworkReplacesExternalCoverAndKeepsEarliestTrack)
+{
+    config->priority = "embedded,folder,theme";
+    config->files.push_back("cover.jpg");
+    const auto folderPath = directory / "album";
+    std::ofstream(folderPath / "cover.jpg") << "external artwork";
+    auto folder = std::make_shared<CdsContainer>(CdsEntryType::Directory);
+    folder->setID(20);
+    folder->setLocation(folderPath, CdsEntryType::Directory);
+
+    auto fileCover = std::make_shared<CdsResource>(ContentHandler::CONTAINERART, ResourcePurpose::Thumbnail);
+    fileCover->addAttribute(ResourceAttribute::RESOURCE_FILE, (folderPath / "cover.jpg").string());
+    folder->addResource(fileCover);
+
+    const auto makeTrack = [&](int id, int trackNumber, bool embedded) {
+        auto track = std::make_shared<CdsItem>(CdsEntryType::File);
+        track->setID(id);
+        track->setClass(UPNP_CLASS_MUSIC_TRACK);
+        track->setTrackNumber(trackNumber);
+        track->setLocation(folderPath / (std::to_string(id) + ".flac"), CdsEntryType::File);
+        track->addResource(std::make_shared<CdsResource>(ContentHandler::DEFAULT, ResourcePurpose::Content));
+        auto art = std::make_shared<CdsResource>(embedded ? ContentHandler::ID3 : ContentHandler::FANART, ResourcePurpose::Thumbnail);
+        if (!embedded)
+            art->addAttribute(ResourceAttribute::RESOURCE_FILE, (folderPath / "cover.jpg").string());
+        track->addResource(art);
+        database->tracks.emplace(id, track);
+        return track;
+    };
+    const auto noCover = makeTrack(101, 1, false);
+    const auto earlier = makeTrack(102, 2, true);
+    const auto later = makeTrack(103, 3, true);
+
+    ContentState state({}, ImportState::Created, nullptr, std::chrono::seconds(0), nullptr);
+    state.setFirstObject(later, true);
+    state.setFirstObject(noCover, true);
+    state.setFirstObject(earlier, true);
+    EXPECT_EQ(state.getFirstObject(), earlier);
+
+    ImportService importer(context, converters);
+    auto scan = std::make_shared<AutoscanDirectory>(folderPath, AutoscanScanMode::Timed, false, false);
+    importer.run(nullptr, scan, folderPath);
+
+    const auto sourceId = [](const std::shared_ptr<CdsObject>& container) {
+        const auto art = container->getResource(ResourcePurpose::Thumbnail);
+        return art ? art->getAttribute(ResourceAttribute::FANART_OBJ_ID) : "";
+    };
+    const auto scanWith = [&](const auto& track) {
+        importer.finishScan(folderPath, folder, std::chrono::seconds(1), track);
+    };
+    scanWith(noCover);
+    EXPECT_EQ(folder->getResource(ResourcePurpose::Thumbnail)->getAttribute(ResourceAttribute::RESOURCE_FILE), (folderPath / "cover.jpg").string());
+    importer.updateAudioFolderArtwork(later, folder);
+    EXPECT_EQ(sourceId(folder), "103");
+    scanWith(earlier);
+    EXPECT_EQ(sourceId(folder), "102");
+    scanWith(later);
+    EXPECT_EQ(sourceId(folder), "102");
+
+    auto album = std::make_shared<CdsContainer>("Album", UPNP_CLASS_MUSIC_ALBUM);
+    album->addResource(fileCover->clone());
+    const std::vector<std::shared_ptr<CdsObject>> chain { album };
+    std::vector<int> newIds;
+    importer.addContainerTree(0, chain, noCover, newIds);
+    EXPECT_EQ(database->container->getResource(ResourcePurpose::Thumbnail)->getAttribute(ResourceAttribute::RESOURCE_FILE), (folderPath / "cover.jpg").string());
+
+    const auto addLayoutArtwork = [&](const auto& track) {
+        album->setAudioArtworkSource(track->getID());
+        importer.addContainerTree(0, chain, nullptr, newIds);
+    };
+    addLayoutArtwork(earlier);
+    EXPECT_EQ(sourceId(database->container), "102");
+    addLayoutArtwork(later);
+    EXPECT_EQ(sourceId(database->container), "102");
+
+    database->tracks.erase(earlier->getID());
+    scanWith(later);
+    EXPECT_EQ(sourceId(folder), "103");
+    addLayoutArtwork(later);
+    EXPECT_EQ(sourceId(database->container), "103");
+}
+
+TEST_F(ContainerArtTest, ArtworkPriorityPicksFolderOrThemeWhenConfiguredFirst)
+{
+    config->files.push_back("cover.jpg");
+    const auto folderPath = directory / "album";
+    const auto localCover = folderPath / "cover.jpg";
+    const auto themeCover = config->directory / "object.container.png";
+    std::ofstream(localCover) << "external artwork";
+    std::ofstream(themeCover) << "theme artwork";
+
+    auto track = std::make_shared<CdsItem>(CdsEntryType::File);
+    track->setID(101);
+    track->setClass(UPNP_CLASS_MUSIC_TRACK);
+    track->setLocation(folderPath / "track.flac", CdsEntryType::File);
+    track->addResource(std::make_shared<CdsResource>(ContentHandler::FLAC, ResourcePurpose::Thumbnail));
+    const auto scan = std::make_shared<AutoscanDirectory>(folderPath, AutoscanScanMode::Timed, false, false);
+
+    for (const auto& [priority, path] : std::map<std::string, fs::path> {
+             { "folder,embedded,theme", localCover }, { "theme,embedded,folder", themeCover } }) {
+        SCOPED_TRACE(priority);
+        config->priority = priority;
+        ImportService importer(context, converters);
+        importer.run(nullptr, scan, folderPath);
+        auto folder = std::make_shared<CdsContainer>(CdsEntryType::Directory);
+        folder->setID(20);
+        folder->setLocation(folderPath, CdsEntryType::Directory);
+        importer.finishScan(folderPath, folder, std::chrono::seconds(1), track);
+        auto artwork = folder->getResource(ResourcePurpose::Thumbnail);
+        ASSERT_NE(artwork, nullptr);
+        EXPECT_EQ(artwork->getAttribute(ResourceAttribute::RESOURCE_FILE), path.string());
+    }
 }

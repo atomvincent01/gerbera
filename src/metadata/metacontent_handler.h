@@ -31,12 +31,14 @@
 #include "metadata_enums.h"
 #include "metadata_handler.h"
 
+class CdsContainer;
 class ConfigDefinition;
 class Content;
 class Database;
 class StringConverter;
 
 enum class ContentPathMode { Primary,
+    Named,
     Fallback };
 
 /// @brief This class is responsible for expanding configuration options to file names
@@ -105,6 +107,10 @@ public:
         const std::shared_ptr<CdsObject>& obj,
         std::vector<int>& newIds) override;
     std::shared_ptr<CdsResource> fillFallbackMetadata(const std::shared_ptr<CdsObject>& obj) override;
+    std::shared_ptr<CdsResource> findArtwork(
+        const std::shared_ptr<CdsContainer>& obj,
+        const fs::path& folder,
+        ContentPathMode mode);
     std::unique_ptr<IOHandler> serveContent(
         const std::shared_ptr<CdsObject>& obj,
         const std::shared_ptr<CdsResource>& resource) override;

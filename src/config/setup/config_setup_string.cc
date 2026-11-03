@@ -29,11 +29,15 @@
 #include "common.h"
 #include "config/config_options.h"
 #include "exceptions.h"
+#include "util/fmt_compat.h"
 #include "util/logger.h"
 #include "util/string_converter.h"
 #include "util/tools.h"
 
+#include <algorithm>
+#include <array>
 #include <pugixml.hpp>
+#include <string_view>
 
 void ConfigStringSetup::makeOption(
     const pugi::xml_node& root,
@@ -65,6 +69,22 @@ bool ConfigStringSetup::CheckCharset(std::string& value)
         log_error("Error in config file: unsupported charset specified: {}\n{}", value, EX(e));
         return false;
     }
+    return true;
+}
+
+bool ConfigStringSetup::CheckCoverArtPriority(std::string& value)
+{
+    if (value.empty())
+        return true;
+
+    auto order = splitString(value, ',', '\0', true);
+    for (auto& source : order)
+        source = trimString(source);
+    constexpr std::array<std::string_view, 3> sources { "embedded", "folder", "theme" };
+    if (!std::is_permutation(order.begin(), order.end(), sources.begin(), sources.end()))
+        return false;
+
+    value = fmt::format("{}", fmt::join(order, ","));
     return true;
 }
 

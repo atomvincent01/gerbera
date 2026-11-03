@@ -40,6 +40,7 @@ class AutoScanSetting;
 class CdsContainer;
 class CdsItem;
 class CdsObject;
+class CdsResource;
 class Config;
 class ContentManager;
 class Context;
@@ -107,10 +108,7 @@ public:
         this->state = state;
         this->cdsObject = std::move(cdsObject);
     }
-    void setFirstObject(std::shared_ptr<CdsObject> firstObject)
-    {
-        this->firstObject = std::move(firstObject);
-    }
+    void setFirstObject(std::shared_ptr<CdsObject> firstObject, bool prioritizeAudio);
     void setParentObject(std::shared_ptr<CdsContainer> parentObject)
     {
         this->parentObject = std::move(parentObject);
@@ -238,6 +236,7 @@ private:
     bool pcDirTypes { true };
     int containerImageParentCount { 2 };
     int containerImageMinDepth { 2 };
+    std::vector<std::string> coverArtPriority;
 
     std::vector<std::vector<std::pair<std::string, std::string>>> virtualDirKeys;
 
@@ -270,6 +269,11 @@ private:
     void updateSingleItem(const fs::directory_entry& dirEntry, const std::shared_ptr<CdsItem>& item, const std::string& mimetype);
     void fillLayout(const std::shared_ptr<StateCache>& stateCache, const std::shared_ptr<GenericTask>& task);
     void updateFanArt(const std::shared_ptr<StateCache>& stateCache, bool isDir);
+    void assignAudioArtwork(
+        const std::shared_ptr<CdsContainer>& container,
+        const std::shared_ptr<CdsObject>& track,
+        bool doUpdate);
+
     /// @brief try to assign fanart to container
     /// @param container target object
     /// @param refObj object to point to for fanart
@@ -277,13 +281,15 @@ private:
     /// @param isDir target is physical folder
     /// @param count current depth of folder path
     /// @param isNew new virtual target
+    /// @param albumTrack physical audio item offered by the layout for this album node
     void assignFanArt(
         const std::shared_ptr<CdsContainer>& container,
         const std::shared_ptr<CdsObject>& refObj,
         AutoscanMediaMode mediaMode,
         bool isDir,
         int count,
-        bool isNew);
+        bool isNew,
+        const std::shared_ptr<CdsObject>& albumTrack = nullptr);
     void removeHidden(const std::shared_ptr<StateCache>& stateCache, const AutoScanSetting& settings);
 
     /// @brief Extract mime type and corresponding upnp class from file
@@ -361,6 +367,17 @@ public:
         const std::vector<std::shared_ptr<CdsObject>>& chain,
         const std::shared_ptr<CdsObject>& refItem,
         std::vector<int>& createdIds);
+
+    bool hasCoverArtPriority() const { return !coverArtPriority.empty(); }
+
+    void updateAudioFolderArtwork(
+        const std::shared_ptr<CdsObject>& track,
+        std::shared_ptr<CdsContainer> parent);
+
+    /// @brief Select an audio source by embedded artwork, disc, track and path.
+    static bool preferAudioArtwork(
+        const std::shared_ptr<CdsObject>& candidate,
+        const std::shared_ptr<CdsObject>& current);
 
     void finishScan(
         const fs::path& location,

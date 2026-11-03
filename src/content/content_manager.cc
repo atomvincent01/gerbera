@@ -536,6 +536,8 @@ std::shared_ptr<CdsObject> ContentManager::_addFile(
 
     if (asSetting.recursive && obj->isContainer())
         addRecursive(asSetting.adir, dirEnt, std::dynamic_pointer_cast<CdsContainer>(obj), asSetting.followSymlinks, asSetting.hidden, task);
+    else
+        getImportService(asSetting.adir)->updateAudioFolderArtwork(obj, parent);
 
     if (asSetting.rescanResource && obj->hasResource(ContentHandler::RESOURCE)) {
         std::string parentPath = dirEnt.path().parent_path();
@@ -758,6 +760,7 @@ void ContentManager::_rescanDirectory(const std::shared_ptr<AutoscanDirectory>& 
         }
         getImportService(adir)->doImport(location, asSetting, list, task);
     } else {
+        const bool prioritizeAudio = getImportService(adir)->hasCoverArtPriority();
         auto lastModifiedCurrentMax = adir->getPreviousLMT(location, parentContainer);
         auto currentTme = currentTime();
         auto lastModifiedNewMax = lastModifiedCurrentMax;
@@ -833,12 +836,9 @@ void ContentManager::_rescanDirectory(const std::shared_ptr<AutoscanDirectory>& 
                     if (lastModifiedNewMax < lwt && lwt <= currentTme)
                         lastModifiedNewMax = lwt;
                 }
-                if (!firstObject && newObject) {
+                if (prioritizeAudio ? ImportService::preferAudioArtwork(newObject, firstObject)
+                                    : !firstObject && newObject && newObject->isSubClass(UPNP_CLASS_AUDIO_ITEM))
                     firstObject = newObject;
-                    if (!firstObject->isSubClass(UPNP_CLASS_AUDIO_ITEM)) {
-                        firstObject = nullptr;
-                    }
-                }
             } else if (dirEnt.is_directory(ec) && asSetting.recursive) {
                 auto newObject = database->findObjectByPath(newPath, UNUSED_CLIENT_GROUP);
                 if (lastModifiedNewMax < lwt && lwt <= currentTme)
@@ -999,6 +999,7 @@ void ContentManager::addRecursive(
 
     auto list = std::unordered_set<int>();
     database->getObjects(parentID, false, list, false, INVALID_OBJECT_ID);
+    const bool prioritizeAudio = getImportService(adir)->hasCoverArtPriority();
     bool firstChild = true;
     std::shared_ptr<CdsObject> firstObject;
     for (auto&& subDirEnt : dIter) {
@@ -1032,9 +1033,9 @@ void ContentManager::addRecursive(
                 list.erase(obj->getID());
                 if (obj->isItem()) {
                     parentID = obj->getParentID();
-                    if (!firstObject && obj->isSubClass(UPNP_CLASS_AUDIO_ITEM)) {
+                    if (prioritizeAudio ? ImportService::preferAudioArtwork(obj, firstObject)
+                                        : !firstObject && obj->isSubClass(UPNP_CLASS_AUDIO_ITEM))
                         firstObject = obj;
-                    }
                 }
                 if (obj->isContainer()) {
                     addRecursive(adir, subDirEnt, std::static_pointer_cast<CdsContainer>(obj), followSymlinks, hidden, task);
