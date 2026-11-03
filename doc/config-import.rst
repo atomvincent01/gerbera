@@ -2101,10 +2101,12 @@ same setting and the ``image`` attribute on dynamic containers.
 .. confval:: priority
 
    Optional comma-separated source order for music albums and their folders.
-   Use each of ``embedded``, ``folder`` and ``theme`` once. For example,
-   ``priority="embedded,folder,theme"`` first looks for a picture in
-   an audio track, then uses configured image files beside the music, and
-   finally uses the shared container art location. With no priority specified,
+   For example, ``priority="embedded, cover.*, folder.*, front.*, external"``
+   looks for an embedded image and then for matching image filenames in the
+   audio folder. The matching is case-insensitive and the first successful
+   entry wins. The ``external`` entry is reserved for an online cover
+   provider and is skipped when unavailable. Gerbera falls back to the
+   configured theme after exhausting the list. With no priority specified,
    Gerbera uses its existing container artwork selection.
 
 .. confval:: parentCount

@@ -53,7 +53,6 @@ public:
     std::shared_ptr<ConfigOption> newOption(const std::string& optValue);
 
     static bool CheckCharset(std::string& value);
-    static bool CheckCoverArtPriority(std::string& value);
     static bool MergeContentSecurityPolicy(std::string& value);
 };
 

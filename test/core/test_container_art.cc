@@ -59,6 +59,13 @@ public:
         return {};
     }
 
+    std::map<std::string, std::string> getDictionaryOption(ConfigVal option) const override
+    {
+        if (option == ConfigVal::IMPORT_MAPPINGS_EXTENSION_TO_MIMETYPE_LIST)
+            return { { "jpg", "image/jpeg" }, { "png", "image/png" }, { "txt", "text/plain" } };
+        return ConfigMock::getDictionaryOption(option);
+    }
+
     std::vector<std::string> getArrayOption(ConfigVal option) const override
     {
         return option == ConfigVal::IMPORT_RESOURCES_CONTAINERART_FILE_LIST ? files : ConfigMock::getArrayOption(option);
@@ -185,8 +192,7 @@ TEST_F(ContainerArtTest, TypedDefaultsPreserveNamedCategoriesLocalCoversAndLater
 
 TEST_F(ContainerArtTest, EmbeddedAudioArtworkReplacesExternalCoverAndKeepsEarliestTrack)
 {
-    config->priority = "embedded,folder,theme";
-    config->files.push_back("cover.jpg");
+    config->priority = "Embedded, , COVER.*, external";
     const auto folderPath = directory / "album";
     std::ofstream(folderPath / "cover.jpg") << "external artwork";
     auto folder = std::make_shared<CdsContainer>(CdsEntryType::Directory);
@@ -264,14 +270,15 @@ TEST_F(ContainerArtTest, EmbeddedAudioArtworkReplacesExternalCoverAndKeepsEarlie
     EXPECT_EQ(sourceId(database->container), "103");
 }
 
-TEST_F(ContainerArtTest, ArtworkPriorityPicksFolderOrThemeWhenConfiguredFirst)
+TEST_F(ContainerArtTest, ArtworkPriorityMatchesOrderedImageGlobsAndThenUsesTheme)
 {
-    config->files.push_back("cover.jpg");
     const auto folderPath = directory / "album";
-    const auto localCover = folderPath / "cover.jpg";
+    const auto localCover = folderPath / "COVER.JPG";
+    const auto folderCover = folderPath / "folder.png";
+    const auto secondCover = folderPath / "cover.2.jpg";
     const auto themeCover = config->directory / "object.container.png";
-    std::ofstream(localCover) << "external artwork";
-    std::ofstream(themeCover) << "theme artwork";
+    for (const auto& path : { localCover, folderCover, secondCover, folderPath / "cover.10.jpg", folderPath / "cover.txt", themeCover })
+        std::ofstream(path) << "artwork";
 
     auto track = std::make_shared<CdsItem>(CdsEntryType::File);
     track->setID(101);
@@ -281,7 +288,10 @@ TEST_F(ContainerArtTest, ArtworkPriorityPicksFolderOrThemeWhenConfiguredFirst)
     const auto scan = std::make_shared<AutoscanDirectory>(folderPath, AutoscanScanMode::Timed, false, false);
 
     for (const auto& [priority, path] : std::map<std::string, fs::path> {
-             { "folder,embedded,theme", localCover }, { "theme,embedded,folder", themeCover } }) {
+             { "cover.*, embedded", localCover },
+             { "folder.*, cover.*, embedded", folderCover },
+             { "external, COVER.[0-9]*.jpg, embedded", secondCover },
+             { ", EXTERNAL, *.txt, missing.*, ", themeCover } }) {
         SCOPED_TRACE(priority);
         config->priority = priority;
         ImportService importer(context, converters);

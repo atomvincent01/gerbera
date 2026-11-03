@@ -1370,7 +1370,7 @@ std::vector<std::shared_ptr<ConfigSetup>> ConfigDefinition::getImportOptions()
 
         std::make_shared<ConfigStringSetup>(ConfigVal::IMPORT_RESOURCES_CONTAINERART_PRIORITY,
             "/import/resources/container/attribute::priority", "config-import.html#confval-priority",
-            "", ConfigStringSetup::CheckCoverArtPriority),
+            ""),
 
         // subtitles
         std::make_shared<ConfigArraySetup>(ConfigVal::IMPORT_RESOURCES_SUBTITLE_FILE_LIST,

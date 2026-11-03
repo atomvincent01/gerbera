@@ -225,7 +225,7 @@ TEST_F(ConfigManagerTest, LoadsOrderedAudioTitleReplacements)
     EXPECT_EQ(entries[1], expectedSecond);
 }
 
-TEST_F(ConfigManagerTest, ReadsAndValidatesCoverArtPriority)
+TEST_F(ConfigManagerTest, ReadsOptionalCoverArtPriority)
 {
     auto setup = definition->findConfigSetup(ConfigVal::IMPORT_RESOURCES_CONTAINERART_PRIORITY);
     ASSERT_NE(setup, nullptr);
@@ -234,12 +234,6 @@ TEST_F(ConfigManagerTest, ReadsAndValidatesCoverArtPriority)
     EXPECT_TRUE(setup->getXmlContent(document, nullptr, true).empty());
 
     auto priority = document.select_node("/config/import/resources/container").node().append_attribute("priority");
-    priority.set_value("theme, embedded, folder");
-    EXPECT_EQ(setup->getXmlContent(document, nullptr, true), "theme,embedded,folder");
-
-    for (const auto* invalid : { "folder,embedded", "folder,folder,embedded", "external,embedded,folder", "embedded,folder,theme," }) {
-        SCOPED_TRACE(invalid);
-        priority.set_value(invalid);
-        EXPECT_THROW(setup->getXmlContent(document, nullptr, true), std::runtime_error);
-    }
+    priority.set_value("Embedded, cover.*, folder.*, front.*, external");
+    EXPECT_EQ(setup->getXmlContent(document, nullptr, true), "Embedded, cover.*, folder.*, front.*, external");
 }

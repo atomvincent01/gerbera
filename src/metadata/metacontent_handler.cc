@@ -44,8 +44,12 @@
 #include "util/tools.h"
 
 #include <array>
+#include <fnmatch.h>
+#include <fstream>
+#include <optional>
 #include <regex>
 #include <sys/stat.h>
+#include <tuple>
 
 ContentPathSetup::ContentPathSetup(
     std::shared_ptr<Config> config,
@@ -379,21 +383,42 @@ std::shared_ptr<CdsResource> ContainerArtHandler::fillFallbackMetadata(const std
 }
 
 std::shared_ptr<CdsResource> ContainerArtHandler::findArtwork(
-    const std::shared_ptr<CdsContainer>& obj,
     const fs::path& folder,
-    ContentPathMode mode)
+    const std::string& pattern)
 {
-    auto location = mode == ContentPathMode::Named ? fs::path(config->getOption(ConfigVal::IMPORT_RESOURCES_CONTAINERART_LOCATION)) : folder;
+    std::error_code ec;
+    using Image = std::tuple<std::string, std::string, fs::path>;
+    std::optional<Image> best;
+    for (const auto& file : fs::directory_iterator(folder, ec)) {
+        const auto& path = file.path();
+        auto filename = toLower(path.filename().string());
+        if (fnmatch(pattern.c_str(), filename.c_str(), FNM_PATHNAME) != 0 || !isRegularFile(file, ec)
+            || !startswith(std::get<1>(mime->getMimeType(path)), "image/"))
+            continue;
+        Image candidate { expandNumbersString(toLower(path.stem().string())), expandNumbersString(filename), path };
+        if ((!best || candidate < *best) && std::ifstream(path, std::ios::binary))
+            best = std::move(candidate);
+    }
+    if (!best)
+        return nullptr;
+
+    auto target = std::make_shared<CdsContainer>(CdsEntryType::Directory);
+    fillMetadata(target, { std::get<2>(*best) });
+    return target->getResource(ResourcePurpose::Thumbnail);
+}
+
+std::shared_ptr<CdsResource> ContainerArtHandler::findThemeArtwork(const std::shared_ptr<CdsContainer>& obj)
+{
+    const auto location = config->getOption(ConfigVal::IMPORT_RESOURCES_CONTAINERART_LOCATION);
     if (location.empty())
         return nullptr;
+
     auto target = std::make_shared<CdsContainer>(obj->getEntryType());
     obj->copyTo(target);
     target->clearResources();
-    if (mode == ContentPathMode::Primary)
-        target->setLocation(folder, obj->getEntryType());
-    auto paths = setup->getContentPath(target, SETTING_CONTAINERART, location, mode);
+    auto paths = setup->getContentPath(target, SETTING_CONTAINERART, location, ContentPathMode::Named);
     if (paths.front().empty())
-        return mode == ContentPathMode::Named ? fillFallbackMetadata(target) : nullptr;
+        return fillFallbackMetadata(target);
     fillMetadata(target, { paths.front() });
     return target->getResource(ResourcePurpose::Thumbnail);
 }

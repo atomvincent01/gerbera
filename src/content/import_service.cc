@@ -336,7 +336,11 @@ ImportService::ImportService(std::shared_ptr<Context> context, std::shared_ptr<C
     configLayoutMapping = config->getDictionaryOption(ConfigVal::IMPORT_LAYOUT_MAPPING);
     containerImageParentCount = config->getIntOption(ConfigVal::IMPORT_RESOURCES_CONTAINERART_PARENTCOUNT);
     containerImageMinDepth = config->getIntOption(ConfigVal::IMPORT_RESOURCES_CONTAINERART_MINDEPTH);
-    coverArtPriority = splitString(config->getOption(ConfigVal::IMPORT_RESOURCES_CONTAINERART_PRIORITY), ',');
+    for (const auto& entry : splitString(toLower(config->getOption(ConfigVal::IMPORT_RESOURCES_CONTAINERART_PRIORITY)), ',')) {
+        auto pattern = trimString(entry);
+        if (!pattern.empty())
+            coverArtPriority.push_back(std::move(pattern));
+    }
     virtualDirKeys = config->getVectorOption(ConfigVal::IMPORT_VIRTUAL_DIRECTORY_KEYS);
     noMediaName = config->getOption(ConfigVal::IMPORT_NOMEDIA_FILE);
     UpnpMap::initMap(upnpMap, mimetypeUpnpclassMap);
@@ -1160,12 +1164,14 @@ void ImportService::assignAudioArtwork(
                 selected->addAttribute(ResourceAttribute::FANART_RES_ID, artwork->getResId());
                 selected->addOption(RESOURCE_OPTION_EMBEDDED_AUDIO_ART, "yes");
             }
-        } else {
-            selected = handler->findArtwork(container, track->getLocation().parent_path(), source == "theme" ? ContentPathMode::Named : ContentPathMode::Primary);
+        } else if (source != "external") {
+            selected = handler->findArtwork(track->getLocation().parent_path(), source);
         }
         if (selected)
             break;
     }
+    if (!selected)
+        selected = handler->findThemeArtwork(container);
 
     if (current ? !current->equals(selected) : selected != nullptr) {
         container->clearResources();
