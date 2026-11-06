@@ -26,6 +26,7 @@
 
 #include "metacontent_handler.h" // API
 
+#include "cds/cds_container.h"
 #include "cds/cds_item.h"
 #include "cds/cds_objects.h"
 #include "cds/cds_resource.h"
@@ -43,8 +44,12 @@
 #include "util/tools.h"
 
 #include <array>
+#include <fnmatch.h>
+#include <fstream>
+#include <optional>
 #include <regex>
 #include <sys/stat.h>
+#include <tuple>
 
 ContentPathSetup::ContentPathSetup(
     std::shared_ptr<Config> config,
@@ -75,14 +80,14 @@ std::vector<fs::path> ContentPathSetup::getContentPath(
         std::vector<std::string> selectedFiles;
         for (const auto& name : files) {
             if (name == "%upnpclass%.png") {
-                if (mode == ContentPathMode::Primary)
+                if (mode != ContentPathMode::Fallback)
                     continue;
                 auto className = obj->getClass();
                 while (startswith(className, UPNP_CLASS_CONTAINER)) {
                     selectedFiles.push_back(className + ".png");
                     className.erase(className.find_last_of('.'));
                 }
-            } else if (mode == ContentPathMode::Primary) {
+            } else if (mode != ContentPathMode::Fallback) {
                 selectedFiles.push_back(name);
             }
         }
@@ -375,6 +380,47 @@ std::shared_ptr<CdsResource> ContainerArtHandler::fillFallbackMetadata(const std
     auto resource = obj->getResource(ResourcePurpose::Thumbnail);
     resource->addOption(RESOURCE_OPTION_CONTAINER_ART_FALLBACK, "yes");
     return resource;
+}
+
+std::shared_ptr<CdsResource> ContainerArtHandler::findArtwork(
+    const fs::path& folder,
+    const std::string& pattern)
+{
+    std::error_code ec;
+    using Image = std::tuple<std::string, std::string, fs::path>;
+    std::optional<Image> best;
+    for (const auto& file : fs::directory_iterator(folder, ec)) {
+        const auto& path = file.path();
+        auto filename = toLower(path.filename().string());
+        if (fnmatch(pattern.c_str(), filename.c_str(), FNM_PATHNAME) != 0 || !isRegularFile(file, ec)
+            || !startswith(std::get<1>(mime->getMimeType(path)), "image/"))
+            continue;
+        Image candidate { expandNumbersString(toLower(path.stem().string())), expandNumbersString(filename), path };
+        if ((!best || candidate < *best) && std::ifstream(path, std::ios::binary))
+            best = std::move(candidate);
+    }
+    if (!best)
+        return nullptr;
+
+    auto target = std::make_shared<CdsContainer>(CdsEntryType::Directory);
+    fillMetadata(target, { std::get<2>(*best) });
+    return target->getResource(ResourcePurpose::Thumbnail);
+}
+
+std::shared_ptr<CdsResource> ContainerArtHandler::findThemeArtwork(const std::shared_ptr<CdsContainer>& obj)
+{
+    const auto location = config->getOption(ConfigVal::IMPORT_RESOURCES_CONTAINERART_LOCATION);
+    if (location.empty())
+        return nullptr;
+
+    auto target = std::make_shared<CdsContainer>(obj->getEntryType());
+    obj->copyTo(target);
+    target->clearResources();
+    auto paths = setup->getContentPath(target, SETTING_CONTAINERART, location, ContentPathMode::Named);
+    if (paths.front().empty())
+        return fillFallbackMetadata(target);
+    fillMetadata(target, { paths.front() });
+    return target->getResource(ResourcePurpose::Thumbnail);
 }
 
 bool ContainerArtHandler::fillMetadata(

@@ -38,6 +38,7 @@
 #include "database/db_param.h"
 #include "exceptions.h"
 #include "layout/builtin_layout.h"
+#include "metadata/metacontent_handler.h"
 #include "metadata/metadata_enums.h"
 #include "metadata/metadata_handler.h"
 #include "metadata/metadata_service.h"
@@ -150,6 +151,62 @@ ContentState::ContentState(
     itemLimit[ObjectType::Playlist] = 3;
     itemLimit[ObjectType::Folder] = 3;
     itemLimit[ObjectType::Unknown] = 3;
+}
+
+static bool isAudioFile(const std::shared_ptr<CdsObject>& object)
+{
+    return object && object->isItem() && !object->isExternalItem() && object->isSubClass(UPNP_CLASS_AUDIO_ITEM);
+}
+
+static std::shared_ptr<CdsResource> embeddedAudioArtwork(const std::shared_ptr<CdsObject>& object)
+{
+    if (!isAudioFile(object))
+        return nullptr;
+    for (const auto& resource : object->getResources()) {
+        if (resource->getPurpose() != ResourcePurpose::Thumbnail
+            || !resource->getAttribute(ResourceAttribute::RESOURCE_FILE).empty()
+            || !resource->getAttribute(ResourceAttribute::FANART_OBJ_ID).empty())
+            continue;
+        switch (resource->getHandlerType()) {
+        case ContentHandler::ID3:
+        case ContentHandler::FFMPEG:
+        case ContentHandler::FLAC:
+        case ContentHandler::MATROSKA:
+        case ContentHandler::WAVPACK:
+            return resource;
+        default:
+            break;
+        }
+    }
+    return nullptr;
+}
+
+bool ImportService::preferAudioArtwork(
+    const std::shared_ptr<CdsObject>& candidate,
+    const std::shared_ptr<CdsObject>& current)
+{
+    if (!isAudioFile(candidate))
+        return false;
+    if (!isAudioFile(current))
+        return true;
+
+    const auto order = [](const std::shared_ptr<CdsObject>& object) {
+        const auto item = std::static_pointer_cast<CdsItem>(object);
+        return std::tuple {
+            !embeddedAudioArtwork(item),
+            std::max(1, item->getPartNumber()),
+            item->getTrackNumber() <= 0,
+            std::max(0, item->getTrackNumber()),
+            item->getLocation(),
+        };
+    };
+    return order(candidate) < order(current);
+}
+
+void ContentState::setFirstObject(std::shared_ptr<CdsObject> object, bool prioritizeAudio)
+{
+    if (!prioritizeAudio || !isAudioFile(firstObject) || ImportService::preferAudioArtwork(object, firstObject))
+        firstObject = std::move(object);
 }
 
 static std::map<ObjectType, AutoscanMediaMode> amm = {
@@ -279,6 +336,11 @@ ImportService::ImportService(std::shared_ptr<Context> context, std::shared_ptr<C
     configLayoutMapping = config->getDictionaryOption(ConfigVal::IMPORT_LAYOUT_MAPPING);
     containerImageParentCount = config->getIntOption(ConfigVal::IMPORT_RESOURCES_CONTAINERART_PARENTCOUNT);
     containerImageMinDepth = config->getIntOption(ConfigVal::IMPORT_RESOURCES_CONTAINERART_MINDEPTH);
+    for (const auto& entry : splitString(toLower(config->getOption(ConfigVal::IMPORT_RESOURCES_CONTAINERART_PRIORITY)), ',')) {
+        auto pattern = trimString(entry);
+        if (!pattern.empty())
+            coverArtPriority.push_back(std::move(pattern));
+    }
     virtualDirKeys = config->getVectorOption(ConfigVal::IMPORT_VIRTUAL_DIRECTORY_KEYS);
     noMediaName = config->getOption(ConfigVal::IMPORT_NOMEDIA_FILE);
     UpnpMap::initMap(upnpMap, mimetypeUpnpclassMap);
@@ -785,7 +847,7 @@ void ImportService::createItems(
             }
             if (contState && cdsObj) {
                 contState->increaseItemCounter(cdsObj->getMediaType());
-                contState->setFirstObject(cdsObj);
+                contState->setFirstObject(cdsObj, !coverArtPriority.empty());
             }
             if (parentContainer) {
                 stateEntry->setParentObject(parentContainer);
@@ -1031,6 +1093,22 @@ void ImportService::updateItemData(const std::shared_ptr<CdsItem>& item, const s
     }
 }
 
+void ImportService::updateAudioFolderArtwork(
+    const std::shared_ptr<CdsObject>& track,
+    std::shared_ptr<CdsContainer> parent)
+{
+    if (coverArtPriority.empty() || !isAudioFile(track))
+        return;
+    if (!parent && track->getParentID() > CDS_ID_ROOT) {
+        try {
+            parent = std::dynamic_pointer_cast<CdsContainer>(database->loadObject(track->getParentID()));
+        } catch (const ObjectNotFoundException&) {
+            return;
+        }
+    }
+    assignFanArt(parent, track, AutoscanMediaMode::Mixed, false /* isDir */, 0, false /* isNew */);
+}
+
 void ImportService::finishScan(
     const fs::path& location,
     const std::shared_ptr<CdsContainer>& parent,
@@ -1057,13 +1135,62 @@ void ImportService::finishScan(
     }
 }
 
+void ImportService::assignAudioArtwork(
+    const std::shared_ptr<CdsContainer>& container,
+    const std::shared_ptr<CdsObject>& track,
+    bool doUpdate)
+{
+    auto current = container->getResource(ResourcePurpose::Thumbnail);
+    auto handler = std::static_pointer_cast<ContainerArtHandler>(metadataService->getHandler(ContentHandler::CONTAINERART));
+    std::shared_ptr<CdsResource> selected;
+    for (const auto& source : coverArtPriority) {
+        if (source == "embedded") {
+            auto candidate = track;
+            if (current && !current->getOption(RESOURCE_OPTION_EMBEDDED_AUDIO_ART).empty()) {
+                const auto previousId = stoiString(current->getAttribute(ResourceAttribute::FANART_OBJ_ID));
+                if (previousId != track->getID()) {
+                    try {
+                        auto previous = database->loadObject(previousId);
+                        if (embeddedAudioArtwork(previous) && preferAudioArtwork(previous, track))
+                            candidate = previous;
+                    } catch (const ObjectNotFoundException&) {
+                        // A removed track no longer supplies artwork.
+                    }
+                }
+            }
+            if (auto artwork = embeddedAudioArtwork(candidate)) {
+                selected = artwork->clone();
+                selected->addAttribute(ResourceAttribute::FANART_OBJ_ID, candidate->getID());
+                selected->addAttribute(ResourceAttribute::FANART_RES_ID, artwork->getResId());
+                selected->addOption(RESOURCE_OPTION_EMBEDDED_AUDIO_ART, "yes");
+            }
+        } else if (source != "external") {
+            selected = handler->findArtwork(track->getLocation().parent_path(), source);
+        }
+        if (selected)
+            break;
+    }
+    if (!selected)
+        selected = handler->findThemeArtwork(container);
+
+    if (current ? !current->equals(selected) : selected != nullptr) {
+        container->clearResources();
+        if (selected)
+            container->addResource(selected);
+        doUpdate = true;
+    }
+    if (doUpdate)
+        database->updateObject(container, nullptr);
+}
+
 void ImportService::assignFanArt(
     const std::shared_ptr<CdsContainer>& container,
     const std::shared_ptr<CdsObject>& refObj,
     AutoscanMediaMode mediaMode,
     bool isDir,
     int count,
-    bool isNew)
+    bool isNew,
+    const std::shared_ptr<CdsObject>& albumTrack)
 {
     if (!container)
         return;
@@ -1077,6 +1204,17 @@ void ImportService::assignFanArt(
         if (refObj->getMTime() > container->getMTime()) {
             container->setMTime(refObj->getMTime());
             doUpdate = true;
+        }
+    }
+
+    if (!coverArtPriority.empty()) {
+        auto track = albumTrack;
+        if (!track && container->getEntryType() == CdsEntryType::Directory && isAudioFile(refObj)
+            && refObj->getLocation().parent_path() == container->getLocation())
+            track = refObj;
+        if (isAudioFile(track) && track->getID() > CDS_ID_ROOT) {
+            assignAudioArtwork(container, track, doUpdate);
+            return;
         }
     }
 
@@ -1303,13 +1441,28 @@ std::pair<int, bool> ImportService::addContainerTree(
             }
         }
         count++;
-        if (isVirtual) // && chain.size() - count < containerImageParentCount
+        if (isVirtual) {
+            std::shared_ptr<CdsObject> albumTrack;
+            if (!coverArtPriority.empty() && item->isContainer()) {
+                const auto source = std::static_pointer_cast<CdsContainer>(item)->getAudioArtworkSource();
+                if (source > CDS_ID_ROOT) {
+                    try {
+                        albumTrack = refItem && refItem->getID() == source ? refItem : database->loadObject(source);
+                    } catch (const ObjectNotFoundException&) {
+                        // The source was removed before the layout used it.
+                    }
+                } else if (item->isSubClass(UPNP_CLASS_MUSIC_ALBUM) && isAudioFile(refItem)) {
+                    albumTrack = refItem;
+                }
+            }
             assignFanArt(containerCache.at(subTree),
                 refItem && count > containerImageMinDepth ? refItem : item,
                 AutoscanMediaMode::Mixed,
                 false /* isDir */,
                 chain.size() - count,
-                isNew);
+                isNew,
+                albumTrack);
+        }
     }
     log_debug("end '{}' {} {}", tree, result, isNew);
     return { result, isNew };

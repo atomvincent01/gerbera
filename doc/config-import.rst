@@ -2098,6 +2098,17 @@ For a supplied artwork set, installation paths and a ready-to-merge configuratio
 fragment, see :doc:`container-icons`. Custom images remain supported through this
 same setting and the ``image`` attribute on dynamic containers.
 
+.. confval:: priority
+
+   Optional comma-separated source order for music albums and their folders.
+   For example, ``priority="embedded, cover.*, folder.*, front.*, external"``
+   looks for an embedded image and then for matching image filenames in the
+   audio folder. The matching is case-insensitive and the first successful
+   entry wins. The ``external`` entry is reserved for an online cover
+   provider and is skipped when unavailable. Gerbera falls back to the
+   configured theme after exhausting the list. With no priority specified,
+   Gerbera uses its existing container artwork selection.
+
 .. confval:: parentCount
    :type: :confval:`Integer`
    :required: false

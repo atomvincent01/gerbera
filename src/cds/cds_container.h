@@ -45,6 +45,9 @@ protected:
     /// @brief whether this container is an autoscan start point.
     AutoscanType autoscanType { AutoscanType::None };
 
+    // Import-only source for an album node supplied by a layout.
+    int audioArtworkSource { INVALID_OBJECT_ID };
+
 public:
     /// @brief Constructor, initializes default values for the flags and sets the object type.
     CdsContainer() = delete;
@@ -83,6 +86,9 @@ public:
 
     /// @brief sets whether this container is an autoscan start point.
     void setAutoscanType(AutoscanType type) { autoscanType = type; }
+
+    int getAudioArtworkSource() const { return audioArtworkSource; }
+    void setAudioArtworkSource(int id) { audioArtworkSource = id; }
 
     /// @brief Copies all object properties to another object.
     /// @param obj target object (clone)

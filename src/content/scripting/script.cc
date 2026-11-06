@@ -923,6 +923,7 @@ std::shared_ptr<CdsObject> Script::dukObject2cdsObject(const std::shared_ptr<Cds
             cont->setUpnpShortcut(mval);
         }
 
+        cont->setAudioArtworkSource(ScriptNamedProperty(ctx, "audioArtworkSource").getIntValue(INVALID_OBJECT_ID));
         handleObject2cdsContainer(ctx, pcd, cont);
     }
 
